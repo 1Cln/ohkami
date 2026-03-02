@@ -186,19 +186,19 @@ mod test {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "invalid origin: 'http' or 'https' scheme is required at the start of the string.")]
     fn cors_scheme_invalidation() {
         let _: super::Cors = super::Cors::new("foobarhttp://example.com");
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "invalid origin: port must be a number or wildcard '*'.")]
     fn cors_port_invalidation() {
         let _: super::Cors = super::Cors::new("http://example.com:abcd");
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "invalid origin: host must start with an alphabetic character or wildcard '*'.")]
     fn cors_host_invalidation() {
         let _: super::Cors = super::Cors::new("http://123example.com");
     }
