@@ -183,6 +183,7 @@ mod test {
         let _: super::Cors = super::Cors::new("https://*.example.com");
         let _: super::Cors = super::Cors::new("https://example.com:*");
         let _: super::Cors = super::Cors::new("https://*.example.com:*");
+        let _: super::Cors = super::Cors::new("http://123example.com");
     }
 
     #[test]
@@ -198,9 +199,9 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "invalid origin: host must start with an alphabetic character or wildcard '*'.")]
+    #[should_panic(expected = "invalid origin: host must start with an alphanumeric character or wildcard '*'.")]
     fn cors_host_invalidation() {
-        let _: super::Cors = super::Cors::new("http://123example.com");
+        let _: super::Cors = super::Cors::new("http://%example.com");
     }
 
     #[test]
