@@ -29,6 +29,10 @@ fn validate_origin(origin: &str) -> Result<(), &'static str> {
     let Some(("http" | "https", rest)) = origin.split_once("://") else {
         return Err("invalid origin: 'http' or 'https' scheme is required.");
     };
+    //Adds a check for the maximimum length of a domain
+    if rest.chars().count() > 253 {
+        return Err("invalid origin: maximum length 253 for domain exceeded.")
+    }
     let (host, port) = rest
         .split_once(':')
         .map_or((rest, None), |(h, p)| (h, Some(p)));
@@ -42,7 +46,8 @@ fn validate_origin(origin: &str) -> Result<(), &'static str> {
         !part.is_empty()
             && part
                 .chars()
-                .all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '*'))
+                .all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '*')
+            && part.chars().count() <= 63)
     }) {
         if host.contains(['/', '?', '#']) {
             // helpful error message for common mistake

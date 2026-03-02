@@ -170,7 +170,6 @@ impl<Inner: FangProc> FangProc for CorsProc<Inner> {
 
 #[cfg(test)]
 mod test {
-    use hmac::digest::typenum::assert_type_eq;
 
     #[test]
     fn cors_new_with_str_or_string() {
@@ -184,12 +183,25 @@ mod test {
         let _: super::Cors = super::Cors::new("https://example.com:*");
         let _: super::Cors = super::Cors::new("https://*.example.com:*");
         let _: super::Cors = super::Cors::new("http://123example.com");
+        let _: super::Cors = super::Cors::new("https://abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcde.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.com");
     }
 
     #[test]
     #[should_panic(expected = "invalid origin: 'http' or 'https' scheme is required at the start of the string.")]
     fn cors_scheme_invalidation() {
         let _: super::Cors = super::Cors::new("foobarhttp://example.com");
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid origin: maximum length 253 for domain exceeded.")]
+    fn cors_length_invalidation() {
+        let _: super::Cors = super::Cors::new("https://abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcde.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijkl.com");
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid origin: invalid host.")]
+    fn cors_part_length_invalidation() {
+        let _: super::Cors = super::Cors::new("https://www.abcdefghijklmnopqrstuvwxyzabcdefghijklmnoqrstuvwxyzabcdefghijklmnopqrstuvwxyz.com");
     }
 
     #[test]
