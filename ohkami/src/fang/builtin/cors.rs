@@ -65,7 +65,7 @@ impl AccessControlAllowOrigin {
 
 impl Cors {
     /// Create `Cors` fang using given `origin` as `Access-Control-Allow-Origin` header value.\
-    /// (Both `"*"` and a speciffic origin are available)
+    /// (Both `"*"` and a specific origin are available)
     #[allow(non_snake_case)]
     pub fn new(origin: impl Into<String>) -> Self {
         Self {
@@ -174,6 +174,19 @@ mod test {
     fn cors_new_with_str_or_string() {
         let _: super::Cors = super::Cors::new("https://example.com");
         let _: super::Cors = super::Cors::new(String::from("https://") + "example.com");
+    }
+
+    #[test]
+    fn cors_wildcards_validation() {
+        let subdomain_wildcard: super::Cors = super::Cors::new("https://*.example.com");
+        let port_wildcard: super::Cors = super::Cors::new("https://example.com:*");
+        let full_wildcards: super::Cors = super::Cors::new("https://*.example.com:*");
+        let faulty_scheme: super::Cors = super::Cors::new("foobarhttp://example.com");
+        let faulty_port: super::Cors = super::Cors::new("http://example.com:abcd");
+        let faulty_host: super::Cors = super::Cors::new("http://123example.com");
+        let scheme_error: Err = Err("invalid origin: 'http' or 'https' scheme is required at the start of the string.");
+        let port_error: Err = Err("invalid origin: port must be a number or wildcard '*'.");
+        let host_error: Err = Err("invalid origin: host must start with an alphabetic character or wildcard '*'.");
     }
 
     #[test]
