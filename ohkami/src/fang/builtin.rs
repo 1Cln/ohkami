@@ -42,7 +42,7 @@ fn validate_origin(origin: &str) -> Result<(), &'static str> {
         !part.is_empty()
             && part
                 .chars()
-                .all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_'))
+                .all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '*'))
     }) {
         if host.contains(['/', '?', '#']) {
             // helpful error message for common mistake

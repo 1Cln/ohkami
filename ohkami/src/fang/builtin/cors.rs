@@ -170,6 +170,8 @@ impl<Inner: FangProc> FangProc for CorsProc<Inner> {
 
 #[cfg(test)]
 mod test {
+    use hmac::digest::typenum::assert_type_eq;
+
     #[test]
     fn cors_new_with_str_or_string() {
         let _: super::Cors = super::Cors::new("https://example.com");
@@ -177,16 +179,28 @@ mod test {
     }
 
     #[test]
-    fn cors_wildcards_validation() {
-        let subdomain_wildcard: super::Cors = super::Cors::new("https://*.example.com");
-        let port_wildcard: super::Cors = super::Cors::new("https://example.com:*");
-        let full_wildcards: super::Cors = super::Cors::new("https://*.example.com:*");
-        let faulty_scheme: super::Cors = super::Cors::new("foobarhttp://example.com");
-        let faulty_port: super::Cors = super::Cors::new("http://example.com:abcd");
-        let faulty_host: super::Cors = super::Cors::new("http://123example.com");
-        let scheme_error: Err = Err("invalid origin: 'http' or 'https' scheme is required at the start of the string.");
-        let port_error: Err = Err("invalid origin: port must be a number or wildcard '*'.");
-        let host_error: Err = Err("invalid origin: host must start with an alphabetic character or wildcard '*'.");
+    fn cors_wildcard_validation() {
+        let _: super::Cors = super::Cors::new("https://*.example.com");
+        let _: super::Cors = super::Cors::new("https://example.com:*");
+        let _: super::Cors = super::Cors::new("https://*.example.com:*");
+    }
+
+    #[test]
+    #[should_panic]
+    fn cors_scheme_invalidation() {
+        let _: super::Cors = super::Cors::new("foobarhttp://example.com");
+    }
+
+    #[test]
+    #[should_panic]
+    fn cors_port_invalidation() {
+        let _: super::Cors = super::Cors::new("http://example.com:abcd");
+    }
+
+    #[test]
+    #[should_panic]
+    fn cors_host_invalidation() {
+        let _: super::Cors = super::Cors::new("http://123example.com");
     }
 
     #[test]
