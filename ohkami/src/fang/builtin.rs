@@ -35,8 +35,8 @@ fn validate_origin(origin: &str) -> Result<(), &'static str> {
     if port.is_some_and(|p| !p.chars().all(|c| c.is_ascii_digit() || c == '*')) {
         return Err("invalid origin: port must be a number or wildcard '*'.");
     }
-    if !host.starts_with(|c: char| c.is_ascii_alphabetic() || c == '*') {
-        return Err("invalid origin: host must start with an alphabetic character or wildcard '*'.");
+    if !host.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '*') {
+        return Err("invalid origin: host must start with an alphanumeric character or wildcard '*'.");
     }
     if !host.split('.').all(|part| {
         !part.is_empty()
