@@ -3,10 +3,10 @@ mod method;
 pub use method::Method;
 
 mod path;
-pub(crate) use path::Path;
+pub use path::Path;
 
 mod query;
-pub(crate) use query::QueryParams;
+pub use query::QueryParams;
 
 mod headers;
 #[allow(unused)]
@@ -14,7 +14,7 @@ pub use headers::Header as RequestHeader;
 pub use headers::Headers as RequestHeaders;
 
 mod context;
-use context::Context;
+pub use context::Context;
 
 mod from_request;
 pub use from_request::FromRequest;
@@ -26,7 +26,7 @@ mod _test_headers;
 #[cfg(test)]
 mod _test_parse;
 
-use ohkami_lib::CowSlice;
+pub use ohkami_lib::CowSlice;
 #[cfg(feature = "__rt__")]
 use ohkami_lib::Slice;
 
@@ -161,7 +161,6 @@ pub struct Request {
     /// - `.lambda()` to get `requestContext` of Lambda request
     pub context: Context,
 
-    #[cfg(feature = "__rt__")]
     /// Remote ( directly connected ) peer's IP address
     ///
     /// Default value is `0.0.0.0`. this will be seen in testing or when Cloudlare Workers
