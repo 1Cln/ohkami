@@ -142,8 +142,8 @@ pub struct CorsProc<Inner: FangProc> {
 impl<Inner: FangProc> FangProc for CorsProc<Inner> {
     async fn bite<'b>(&'b self, req: &'b mut Request) -> Response {
         let mut res = self.inner.bite(req).await;
-        print!("Request Path: {}", req.path);
-        print!("Full Request: {:?}", req);
+        print!("Request Origin: {}", req.headers.origin().unwrap_or_else(|| ""));
+        // print!("Full Request: {:?}", req);
 
         res.headers
             .set()
