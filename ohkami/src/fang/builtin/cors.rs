@@ -123,7 +123,6 @@ impl Cors {
         self
     }
     pub fn verify_origin<'a>(origin: &'a str, allow_origin: Cow<'a, str>) -> Cow<'a ,str> {
-        return Cow::Borrowed(origin); //TODO: IMPORTANT: REMOVE THIS CODE, THIS IS FOR TESTING STD OUT
         //Check protocol being the same and character count being within limit, if not return.
         if origin.chars().count() <= 253 {
             let (allow_host, allow_port) = allow_origin
@@ -232,7 +231,6 @@ pub struct CorsProc<Inner: FangProc> {
 impl<Inner: FangProc> FangProc for CorsProc<Inner> {
     async fn bite<'b>(&'b self, req: &'b mut Request) -> Response {
         let mut res = self.inner.bite(req).await;
-        println!("Req header {:?}, Cors {:?}", req.headers.origin().unwrap_or_else(|| ""), self.cors.allow_origin.get_cow());
         let allow_origin = Cors::verify_origin(req.headers.origin().unwrap_or_else(|| ""), self.cors.allow_origin.get_cow()).into_owned();
 
         res.headers
