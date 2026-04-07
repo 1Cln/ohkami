@@ -192,12 +192,16 @@ impl Cors {
                     if allow_port.is_some_and(|p| p == "*") { //Subdomain is valid, and port doesnt matter, return request origin
                         return Cow::Borrowed(origin)
                     }
-                } else {
-                    return Cow::Borrowed(origin)
+                } else if allow_port.is_some_and(|p| p != "*") { //Subdomain is valid, and port doesnt matter, return request origin
+                    return if port == allow_port {
+                        Cow::Borrowed(origin) //Subdomain is wildcard, port is valid
+                    } else {
+                        allow_origin
+                    }
                 }
             }
         }
-        allow_origin
+        allow_origin //No wildcards
     }
 }
 
