@@ -54,5 +54,18 @@ fn validate_origin(origin: &str) -> Result<(), &'static str> {
             Err("invalid origin: invalid host.")
         }
     }
+
+    if host.contains('.') {
+        let Some((subdomain, sld)) = host.split_once('.') else {
+            return Err("invalid origin: invalid host")
+        };
+
+        if sld.split('.').all(|part| part.chars().all(|c| c.is_numeric())) {
+            if subdomain == "*" {
+                return Err("invalid origin: subdomain wildcard not allowed in IP")
+            }
+        }
+    }
+
     Ok(())
 }
