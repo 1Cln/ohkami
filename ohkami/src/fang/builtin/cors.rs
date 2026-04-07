@@ -123,6 +123,7 @@ impl Cors {
         self
     }
     pub fn verify_origin<'a>(origin: &'a str, allow_origin: Cow<'a, str>) -> Cow<'a ,str> {
+        return Cow::Borrowed(origin); //TODO: IMPORTANT: REMOVE THIS CODE, THIS IS FOR TESTING STD OUT
         //Check protocol being the same and character count being within limit, if not return.
         if origin.chars().count() <= 253 {
             let (allow_host, allow_port) = allow_origin
