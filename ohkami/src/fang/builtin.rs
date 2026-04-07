@@ -46,7 +46,7 @@ fn validate_origin(origin: &str) -> Result<(), &'static str> {
     }
     if !host.split('.').all(|part| {
         !part.is_empty()
-        && part.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '*')
+        && part.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '*')
         && part.chars().count() <= 63)
     }) {
         return if host.contains(['/', '?', '#']) {

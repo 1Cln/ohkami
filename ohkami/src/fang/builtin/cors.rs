@@ -1,5 +1,5 @@
 use crate::{Fang, FangProc, Request, Response, Status, header::append};
-use std::borrow::Cow;
+use std::borrow::{Borrow, Cow};
 
 /// # Builtin fang for CORS config
 ///
@@ -122,80 +122,82 @@ impl Cors {
         self.max_age = delta_seconds;
         self
     }
-    pub fn verify_origin(origin: &str, allow_origin: Cow<str>) -> bool {
-        if !origin.starts_with("http") {
-            return false
-        }
+    pub fn verify_origin<'a>(origin: &'a str, allow_origin: Cow<'a, str>) -> Cow<'a ,str> {
         let Some((protocol, rest)) = origin.split_once("://") else {
-            return false
+            return allow_origin;
         };
         let Some((allow_protocol, allow_rest)) = allow_origin.split_once("://") else {
-            return false
+            return allow_origin;
         };
-        if protocol != allow_protocol {
-            return false
-        }
-        if rest.chars().count() > 253 {
-            return false
-        }
+        //Check protocol being the same and character count being within limit, if not return.
+        if protocol == allow_protocol && rest.chars().count() <= 253 {
+            let (allow_host, allow_port) = allow_rest
+                .split_once(':')
+                .map_or((allow_rest, None), |(h, p)| (h, Some(p)));
 
-        let (allow_host, allow_port) = allow_rest
-            .split_once(':')
-            .map_or((allow_rest, None), |(h, p)| (h, Some(p)));
-
-        let (host, port) = rest
-            .split_once(':')
-            .map_or((rest, None), |(h, p)| (h, Some(p)));
-
-        if allow_port.is_some_and(|p| p != "*") {
-            if port != allow_port {
-                return false
+            //No wildcards in Cors at all, return default
+            if !allow_host.starts_with("*.") && !allow_port.is_some_and(|p| p != "*") {
+                return allow_origin;
             }
-        }
 
-        if port.is_some_and(|p| !p.parse::<u64>().unwrap() <= 65535 && !p.chars().all(|c| c.is_ascii_digit() || c == '*')) {
-            return false
-        }
+            let (host, port) = rest
+                .split_once(':')
+                .map_or((rest, None), |(h, p)| (h, Some(p)));
 
-
-        if !host.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '*') {
-            return false;
-        }
-
-        if !host.split('.').all(|part| {
-            !part.is_empty()
-                && part.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '*')
-                && part.chars().count() <= 63)
-        }) {
-            return false
-        }
-
-        if !host.starts_with("*.") {
-            if host != allow_host {
-                return false
-            }
-        }
-        let Some((subdomain, remainder)) = host.split_once('.') else {
-            return false
-        };
-        let Some((allow_subdomain, allow_remainder)) = allow_host.split_once('.') else {
-            return false
-        };
-        if remainder != allow_remainder {
-            return false
-        }
-
-        if subdomain.chars().all(|c| c.is_ascii_alphanumeric()) {
-            if allow_subdomain != "*" {
-                if subdomain != allow_subdomain {
-                    return false
+            //If no port wildcard in Cors, enforce similarity
+            if allow_port.is_some_and(|p| p != "*") {
+                if port != allow_port {
+                    return allow_origin;
                 }
             }
 
-            //TODO: implement checks for subdomains with *.example.com
-        }
+            if !allow_host.starts_with("*.") {
+                if host != allow_host {
+                    return allow_origin
+                }
+            }
 
-        true
+            //Port must be in range of u16, and must be either * or a string of numbers.
+            if port.is_some_and(|p| !p.parse::<u64>().unwrap_or_else(|_| 65536) <= 65535 && !p.chars().all(|c| c.is_ascii_digit())) {
+                return allow_origin;
+            }
+
+            //Origin host must not be empty and only contain up to 63 characters from a-Z, 0-9, '-', '*'.
+            if !host.split('.').all(|part| {
+                !part.is_empty()
+                    && part.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-')
+                    && part.chars().count() <= 63)
+            }) {
+                return allow_origin;
+            }
+
+            let Some((subdomain, sld)) = host.split_once('.') else {
+                return allow_origin;
+            };
+            let Some((allow_subdomain, allow_sld)) = allow_host.split_once('.') else {
+                return allow_origin;
+            };
+
+            //The latter parts of the host must exactly match, as there's no allowed wildcards here.
+            if sld != allow_sld {
+                return allow_origin;
+            }
+
+            //If subdomain is only alphanumeric characters and there's no wildcard, the subdomain must exactly match.
+            if subdomain.chars().all(|c| c.is_ascii_alphanumeric()) {
+                if allow_subdomain != "*" {
+                    if subdomain != allow_subdomain {
+                        return allow_origin;
+                    }
+                    if allow_port.is_some_and(|p| p == "*") { //Subdomain is valid, and port doesnt matter, return request origin
+                        return Cow::Borrowed(origin)
+                    }
+                } else {
+                    return Cow::Borrowed(origin)
+                }
+            }
+        }
+        allow_origin
     }
 }
 
@@ -218,12 +220,11 @@ impl<Inner: FangProc> FangProc for CorsProc<Inner> {
     async fn bite<'b>(&'b self, req: &'b mut Request) -> Response {
         let mut res = self.inner.bite(req).await;
         print!("Request Origin: {}", req.headers.origin().clone().unwrap_or_else(|| ""));
-        // print!("Full Request: {:?}", req);
-        if Cors::verify_origin(req.headers.origin().unwrap_or_else(|| ""), self.cors.allow_origin.get_cow()) {  }
+        let allow_origin = Cors::verify_origin(req.headers.origin().unwrap_or_else(|| ""), self.cors.allow_origin.get_cow()).into_owned();
 
         res.headers
             .set()
-            .access_control_allow_origin(self.cors.allow_origin.get_cow())
+            .access_control_allow_origin(allow_origin)
             .vary(self.cors.allow_origin.is_any().then_some("Origin".into()))
             .access_control_allow_credentials(self.cors.allow_credentials.then_some("true".into()))
             .access_control_expose_headers(
