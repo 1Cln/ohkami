@@ -1,5 +1,5 @@
 use crate::{Fang, FangProc, Request, Response, Status, header::append};
-use std::borrow::{Borrow, Cow};
+use std::borrow::Cow;
 
 /// # Builtin fang for CORS config
 ///
