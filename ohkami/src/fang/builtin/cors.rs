@@ -123,49 +123,36 @@ impl Cors {
         self
     }
     pub fn verify_origin<'a>(origin: &'a str, allow_origin: Cow<'a, str>) -> Cow<'a ,str> {
-        println!("Origin {:?}, allow_origin {:?}", origin, allow_origin);
-        let Some((protocol, rest)) = origin.split_once("://") else {
-            println!("Refused at line 129");
-            return allow_origin;
-        };
-        let Some((allow_protocol, allow_rest)) = allow_origin.split_once("://") else {
-            println!("Refused at line 133");
-            return allow_origin;
-        };
         //Check protocol being the same and character count being within limit, if not return.
-        if protocol == allow_protocol && rest.chars().count() <= 253 {
-            let (allow_host, allow_port) = allow_rest
+        if origin.chars().count() <= 253 {
+            let (allow_host, allow_port) = allow_origin
                 .split_once(':')
-                .map_or((allow_rest, None), |(h, p)| (h, Some(p)));
+                .map_or((allow_origin.as_ref(), None), |(h, p)| (h, Some(p)));
 
             //No wildcards in Cors at all, return default
-            if !allow_host.starts_with("*.") && !allow_port.is_some_and(|p| p != "*") {
-                println!("Refused at line 144");
+            if !allow_host.starts_with("*.") && allow_port.is_some_and(|p| p != "*") {
                 return allow_origin;
             }
 
-            let (host, port) = rest
+            let (host, port) = origin
                 .split_once(':')
-                .map_or((rest, None), |(h, p)| (h, Some(p)));
+                .map_or((origin, None), |(h, p)| (h, Some(p)));
 
             //If no port wildcard in Cors, enforce similarity
             if allow_port.is_some_and(|p| p != "*") {
                 if port != allow_port {
-                    println!("Refused at line 155");
                     return allow_origin;
                 }
             }
 
             if !allow_host.starts_with("*.") {
                 if host != allow_host {
-                    println!("Refused at line 162");
                     return allow_origin
                 }
             }
 
             //Port must be in range of u16, and must be either * or a string of numbers.
             if port.is_some_and(|p| p.parse::<u16>().is_err()) {
-                println!("Refused at line 169");
                 return allow_origin;
             }
 
@@ -175,34 +162,26 @@ impl Cors {
                     && part.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-')
                     && part.chars().count() <= 63)
             }) {
-                println!("Refused at line 179");
                 return allow_origin;
             }
 
             let Some((subdomain, sld)) = host.split_once('.') else {
-                println!("Refused at line 184");
                 return allow_origin;
             };
             let Some((allow_subdomain, allow_sld)) = allow_host.split_once('.') else {
-                println!("Refused at line 188");
                 return allow_origin;
             };
 
             //The latter parts of the host must exactly match, as there's no allowed wildcards here.
             if sld != allow_sld {
-                println!("Refused at line 194");
                 return allow_origin;
             }
-
-            //TODO: Parsing CORS fails on wildcards
 
             //If the request is from an IP address, which cannot have a subdomain, and there's a port wildcard, return origin, otherwise default.
             if sld.split('.').all(|part| part.chars().all(|c| c.is_numeric())) {
                 return if allow_port.is_some_and(|p| p == "*") && subdomain != "*" {
-                    println!("Accepted at line 203");
                     Cow::Borrowed(origin)
                 } else {
-                    println!("Refused at line 206");
                     allow_origin
                 }
             }
@@ -211,25 +190,20 @@ impl Cors {
             if subdomain.chars().all(|c| c.is_ascii_alphanumeric()) {
                 if allow_subdomain != "*" {
                     if subdomain != allow_subdomain {
-                        println!("Refused at line 215");
                         return allow_origin;
                     }
                     if allow_port.is_some_and(|p| p == "*") { //Subdomain is valid, and port doesnt matter, return request origin
-                        println!("Accepted at line 219");
                         return Cow::Borrowed(origin)
                     }
                 } else if allow_port.is_some_and(|p| p != "*") {
                     return if port == allow_port {
-                        println!("Accepted at line 224");
                         Cow::Borrowed(origin) //Subdomain is wildcard, port is valid
                     } else {
-                        println!("Refused at line 227");
                         allow_origin
                     }
                 }
             }
         }
-        println!("Refused at line 233");
         allow_origin //No wildcards
     }
 }
@@ -293,6 +267,13 @@ impl<Inner: FangProc> FangProc for CorsProc<Inner> {
 
 #[cfg(test)]
 mod test {
+    use std::borrow::Cow;
+
+    #[test]
+    fn cors_accept_wildcard_in_ip_port() {
+        let a = super::Cors::verify_origin("192.168.1.41:5173", Cow::Borrowed("192.168.1.41:*"));
+        assert_eq!("192.168.1.41:5173", a.as_ref())
+    }
     #[test]
     fn cors_new_with_str_or_string() {
         let _: super::Cors = super::Cors::new("https://example.com");
@@ -327,7 +308,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "invalid origin: port must be a number or wildcard '*'.")]
+    #[should_panic(expected = "[Cors::new] invalid origin: port must be a number between 0 and 65535 or wildcard '*'.")]
     fn cors_port_invalidation() {
         let _: super::Cors = super::Cors::new("http://example.com:abcd");
     }
