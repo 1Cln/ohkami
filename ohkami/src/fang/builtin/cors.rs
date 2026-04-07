@@ -231,6 +231,7 @@ pub struct CorsProc<Inner: FangProc> {
 impl<Inner: FangProc> FangProc for CorsProc<Inner> {
     async fn bite<'b>(&'b self, req: &'b mut Request) -> Response {
         let mut res = self.inner.bite(req).await;
+        println!("Req header {:?}, Cors {:?}", req.headers.origin().unwrap_or_else(|| ""), self.cors.allow_origin.get_cow());
         let allow_origin = Cors::verify_origin(req.headers.origin().unwrap_or_else(|| ""), self.cors.allow_origin.get_cow()).into_owned();
 
         res.headers
