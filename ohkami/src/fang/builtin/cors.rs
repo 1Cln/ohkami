@@ -158,7 +158,7 @@ impl Cors {
             }
 
             //Port must be in range of u16, and must be either * or a string of numbers.
-            if port.is_some_and(|p| p != "*" && p.parse::<u16>().is_err()) {
+            if port.is_some_and(|p| p.parse::<u16>().is_err()) {
                 return allow_origin;
             }
 
@@ -182,6 +182,8 @@ impl Cors {
             if sld != allow_sld {
                 return allow_origin;
             }
+
+            //TODO: Parsing CORS fails on wildcards
 
             //If the request is from an IP address, which cannot have a subdomain, and there's a port wildcard, return origin, otherwise default.
             if sld.split('.').all(|part| part.chars().all(|c| c.is_numeric())) {
