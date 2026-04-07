@@ -122,6 +122,81 @@ impl Cors {
         self.max_age = delta_seconds;
         self
     }
+    pub fn verify_origin(origin: &str, allow_origin: Cow<str>) -> bool {
+        if !origin.starts_with("http") {
+            return false
+        }
+        let Some((protocol, rest)) = origin.split_once("://") else {
+            return false
+        };
+        let Some((allow_protocol, allow_rest)) = allow_origin.split_once("://") else {
+            return false
+        };
+        if protocol != allow_protocol {
+            return false
+        }
+        if rest.chars().count() > 253 {
+            return false
+        }
+
+        let (allow_host, allow_port) = allow_rest
+            .split_once(':')
+            .map_or((allow_rest, None), |(h, p)| (h, Some(p)));
+
+        let (host, port) = rest
+            .split_once(':')
+            .map_or((rest, None), |(h, p)| (h, Some(p)));
+
+        if allow_port.is_some_and(|p| p != "*") {
+            if port != allow_port {
+                return false
+            }
+        }
+
+        if port.is_some_and(|p| !p.parse::<u64>().unwrap() <= 65535 && !p.chars().all(|c| c.is_ascii_digit() || c == '*')) {
+            return false
+        }
+
+
+        if !host.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '*') {
+            return false;
+        }
+
+        if !host.split('.').all(|part| {
+            !part.is_empty()
+                && part.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '*')
+                && part.chars().count() <= 63)
+        }) {
+            return false
+        }
+
+        if !host.starts_with("*.") {
+            if host != allow_host {
+                return false
+            }
+        }
+        let Some((subdomain, remainder)) = host.split_once('.') else {
+            return false
+        };
+        let Some((allow_subdomain, allow_remainder)) = allow_host.split_once('.') else {
+            return false
+        };
+        if remainder != allow_remainder {
+            return false
+        }
+
+        if subdomain.chars().all(|c| c.is_ascii_alphanumeric()) {
+            if allow_subdomain != "*" {
+                if subdomain != allow_subdomain {
+                    return false
+                }
+            }
+
+            //TODO: implement checks for subdomains with *.example.com
+        }
+
+        true
+    }
 }
 
 impl<Inner: FangProc> Fang<Inner> for Cors {
@@ -144,6 +219,7 @@ impl<Inner: FangProc> FangProc for CorsProc<Inner> {
         let mut res = self.inner.bite(req).await;
         print!("Request Origin: {}", req.headers.origin().clone().unwrap_or_else(|| ""));
         // print!("Full Request: {:?}", req);
+        if Cors::verify_origin(req.headers.origin().unwrap_or_else(|| ""), self.cors.allow_origin.get_cow()) {  }
 
         res.headers
             .set()
