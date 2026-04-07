@@ -183,6 +183,15 @@ impl Cors {
                 return allow_origin;
             }
 
+            //If the request is from an IP address, which cannot have a subdomain, and there's a port wildcard, return origin, otherwise default.
+            if !host.split('.').all(|part| part.chars().all(|c| c.is_numeric())) {
+                return if allow_port.is_some_and(|p| p == "*") {
+                    Cow::Borrowed(origin)
+                } else {
+                    allow_origin
+                }
+            }
+
             //If subdomain is only alphanumeric characters and there's no wildcard, the subdomain must exactly match.
             if subdomain.chars().all(|c| c.is_ascii_alphanumeric()) {
                 if allow_subdomain != "*" {
