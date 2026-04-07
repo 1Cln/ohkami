@@ -36,9 +36,7 @@ fn validate_origin(origin: &str) -> Result<(), &'static str> {
     let (host, port) = rest
         .split_once(':')
         .map_or((rest, None), |(h, p)| (h, Some(p)));
-    if port.is_some_and(|p| p == "*" || !p.parse::<u64>().unwrap_or_else(|_| 65536) <= 65535
-        && !p.chars().all(|c| c.is_ascii_digit() || c == '*')
-    ) {
+     if port.is_some_and(|p| p != "*" && p.parse::<u16>().is_err()) {
         return Err("invalid origin: port must be a number between 0 and 65535 or wildcard '*'.");
     }
     if !host.starts_with(|c: char| c.is_ascii_alphanumeric() || c == '*') {

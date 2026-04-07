@@ -158,7 +158,7 @@ impl Cors {
             }
 
             //Port must be in range of u16, and must be either * or a string of numbers.
-            if port.is_some_and(|p| !p.parse::<u64>().unwrap_or_else(|_| 65536) <= 65535 && !p.chars().all(|c| c.is_ascii_digit())) {
+            if port.is_some_and(|p| p != "*" && p.parse::<u16>().is_err()) {
                 return allow_origin;
             }
 
