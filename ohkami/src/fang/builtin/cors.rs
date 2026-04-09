@@ -280,6 +280,17 @@ impl<Inner: FangProc> FangProc for CorsProc<Inner> {
 mod test {
 
     #[test]
+    fn cors_accept_regular_ip() {
+        assert_eq!("https://192.168.1.41:5173", super::Cors::verify_origin("https://192.168.1.41:5173", std::borrow::Cow::Borrowed("https://192.168.1.41:5173")))
+    }
+
+    #[test]
+    fn cors_accept_regular_domain() {
+        assert_eq!("https://example.com", super::Cors::verify_origin("https://example.com", std::borrow::Cow::Borrowed("https://example.com")));
+        assert_eq!("https://sub.example.com", super::Cors::verify_origin("https://sub.example.com", std::borrow::Cow::Borrowed("https://sub.example.com")))
+    }
+
+    #[test]
     fn cors_accept_wildcard_in_ip_port() {
         assert_eq!("https://192.168.1.41:5173", super::Cors::verify_origin("https://192.168.1.41:5173", std::borrow::Cow::Borrowed("https://192.168.1.41:*")))
     }
