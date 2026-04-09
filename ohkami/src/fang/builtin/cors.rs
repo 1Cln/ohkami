@@ -124,20 +124,26 @@ impl Cors {
     }
     pub fn verify_origin<'a>(origin: &'a str, allow_origin: Cow<'a, str>) -> Cow<'a ,str> {
         //Check protocol being the same and character count being within limit, if not return.
-        if origin.chars().count() <= 253 {
-            let (allow_host, allow_port) = allow_origin
+        let Some((protocol, rest)) = origin.split_once("://") else {
+            return allow_origin;
+        };
+        let Some((allow_protocol, allow_rest)) = allow_origin.split_once("://") else {
+            return allow_origin;
+        };
+
+        if protocol == allow_protocol && origin.chars().count() <= 253 {
+            let (allow_host, allow_port) = allow_rest
                 .split_once(':')
-                .map_or((allow_origin.as_ref(), None), |(h, p)| (h, Some(p)));
+                .map_or((allow_rest, None), |(h, p)| (h, Some(p)));
 
             //No wildcards in Cors at all, return default
             if !allow_host.starts_with("*.") && allow_port.is_some_and(|p| p != "*") {
                 return allow_origin;
             }
 
-            let (host, port) = origin
+            let (host, port) = rest
                 .split_once(':')
-                .map_or((origin, None), |(h, p)| (h, Some(p)));
-
+                .map_or((rest, None), |(h, p)| (h, Some(p)));
             //If no port wildcard in Cors, enforce similarity
             if allow_port.is_some_and(|p| p != "*") {
                 if port != allow_port {
@@ -275,37 +281,37 @@ mod test {
 
     #[test]
     fn cors_accept_wildcard_in_ip_port() {
-        assert_eq!("192.168.1.41:5173", super::Cors::verify_origin("192.168.1.41:5173", std::borrow::Cow::Borrowed("192.168.1.41:*")))
+        assert_eq!("https://192.168.1.41:5173", super::Cors::verify_origin("https://192.168.1.41:5173", std::borrow::Cow::Borrowed("https://192.168.1.41:*")))
     }
 
     #[test]
     fn cors_accept_wildcard_in_port() {
-        assert_eq!("example.com:5173", super::Cors::verify_origin("example.com:5173", std::borrow::Cow::Borrowed("example.com:*")))
+        assert_eq!("https://example.com:5173", super::Cors::verify_origin("https://example.com:5173", std::borrow::Cow::Borrowed("https://example.com:*")))
     }
 
     #[test]
     fn cors_accept_wildcard_in_subdomain() {
-        assert_eq!("test.example.com", super::Cors::verify_origin("test.example.com", std::borrow::Cow::Borrowed("*.example.com")))
+        assert_eq!("https://test.example.com", super::Cors::verify_origin("https://test.example.com", std::borrow::Cow::Borrowed("https://*.example.com")))
     }
 
     #[test]
     fn cors_deny_wildcard_in_ip_subdomain() {
-        assert_eq!("192.168.1.0:8080", super::Cors::verify_origin("192.*.1.0:8080", std::borrow::Cow::Borrowed("192.168.1.0:8080")))
+        assert_eq!("https://192.168.1.0:8080", super::Cors::verify_origin("https://192.*.1.0:8080", std::borrow::Cow::Borrowed("https://192.168.1.0:8080")))
     }
 
     #[test]
     fn cors_deny_wildcard_in_sld() {
-        assert_eq!("test.example.com:8080", super::Cors::verify_origin("test.*.com:8080", std::borrow::Cow::Borrowed("test.example.com:8080")))
+        assert_eq!("https://test.example.com:8080", super::Cors::verify_origin("https://test.*.com:8080", std::borrow::Cow::Borrowed("https://test.example.com:8080")))
     }
 
     #[test]
     fn cors_deny_invalid_ip() {
-        assert_eq!("192.168.1.0:8080", super::Cors::verify_origin("192.168.a.0:8080", std::borrow::Cow::Borrowed("192.168.1.0:8080")))
+        assert_eq!("https://192.168.1.0:8080", super::Cors::verify_origin("https://192.168.a.0:8080", std::borrow::Cow::Borrowed("https://192.168.1.0:8080")))
     }
 
     #[test]
     fn cors_deny_invalid_ip_port_range() {
-        assert_eq!("192.168.1.0:8080", super::Cors::verify_origin("192.168.1.0:80080", std::borrow::Cow::Borrowed("192.168.1.0:8080")))
+        assert_eq!("https://192.168.1.0:8080", super::Cors::verify_origin("https://192.168.1.0:80080", std::borrow::Cow::Borrowed("https://192.168.1.0:8080")))
     }
 
     #[test]
