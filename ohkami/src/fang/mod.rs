@@ -101,12 +101,11 @@ impl<Proc: FangProc> FangProcCaller for Proc {
     }
 }
 
-#[derive(Clone /* copy pointer */)]
-pub(crate) struct BoxedFPC(&'static (dyn FPCBound + 'static));
+pub(crate) struct BoxedFPC(Box<dyn FPCBound + 'static>);
 const _: () = {
     impl BoxedFPC {
         pub(crate) fn from_proc(proc: impl FPCBound + 'static) -> Self {
-            Self(Box::leak(Box::new(proc)))
+            Self(Box::new(proc))
         }
     }
 
@@ -114,7 +113,7 @@ const _: () = {
         type Target = dyn FPCBound + 'static;
         #[inline(always)]
         fn deref(&self) -> &Self::Target {
-            self.0
+            &*self.0
         }
     }
 

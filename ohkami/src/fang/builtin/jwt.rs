@@ -1,7 +1,7 @@
 #![allow(non_snake_case, non_camel_case_types)]
 
-use crate::fang::{SendOnThreaded, SendSyncOnThreaded};
-use crate::{Fang, FangProc, IntoResponse, Request, Response};
+use crate::fang::SendSyncOnThreaded;
+use crate::{Request, Response};
 use serde::{Deserialize, Serialize};
 use std::{borrow::Cow, marker::PhantomData};
 
@@ -9,22 +9,31 @@ use std::{borrow::Cow, marker::PhantomData};
 ///
 /// <br>
 ///
-/// ## fang
-///
-/// For each request, get JWT token and verify based on given config and `Payload: for<'de> Deserialize<'de>`.
-///
-/// ## helper
-///
-/// `.issue(/* Payload: Serialize */)` generates a JWT token on the config.
-///
-/// <br>
-///
 /// ## default config
 ///
 /// - get token: from `Authorization: Bearer ＜here＞`
 ///   - customizable by `.get_token_by( 〜 )`
-/// - verifying algorithm: `HMAC-SHA256`
+/// - verification algorithm: `HMAC-SHA256`
 ///   - `HMAC-SHA{256, 384, 512}` are available now
+/// - issuer: `None`
+///   - configured by `.with_issuer(...)`
+/// - audience: `None`
+///   - configured by `.with_audience(...)`
+///
+/// ## as fang (middleware)
+///
+/// Gets a JWT token from each request and verify it.
+/// `Jwt`'s type parameter means the payload type and it must implements `DeserializeOwned` (for<'de> Deserialize<'de>).
+///
+/// ## helper
+///
+/// - `.issue(/* P: Serialize */)` generates a JWT token with the `Jwt` config and given payload: `P`.
+///   - **NOTE**: When `.with_{issuer, audience}` are configured,
+///     `Payload` itself MUST NOT contain fields named `iss` or `aud`,
+///     where the behavior is undefined.
+/// - `.verify(/* &Request */) -> Result<(), Response>` verifies a `Request` based on the `Jwt`.
+/// - `.verified(/* &Request */) -> Result<P, Response>` (`P: DeserializeOwned`) verifies a `Request`
+///   based on the `Jwt` and then returns a parsed `P`.
 ///
 /// <br>
 ///
@@ -42,7 +51,7 @@ use std::{borrow::Cow, marker::PhantomData};
 /// }
 ///
 /// fn our_jwt() -> Jwt<OurJwtPayload> {
-///     Jwt::default("OUR_JWT_SECRET_KEY")
+///     Jwt::new_hs256("OUR_JWT_SECRET_KEY")
 /// }
 ///
 /// async fn hello(
@@ -83,12 +92,13 @@ use std::{borrow::Cow, marker::PhantomData};
 ///     )).howl("localhost:3000").await
 /// }
 /// ```
-pub struct Jwt<Payload: Serialize + for<'de> Deserialize<'de> + SendSyncOnThreaded + 'static> {
-    _payload: PhantomData<Payload>,
+pub struct Jwt<P> {
+    _payload: PhantomData<P>,
     secret: Cow<'static, str>,
     alg: VerifyingAlgorithm,
+    issuer: Option<Box<str>>,
+    audience: Option<Box<str>>,
     get_token: fn(&Request) -> Option<&str>,
-
     #[cfg(feature = "openapi")]
     openapi_security: crate::openapi::security::SecurityScheme,
 }
@@ -100,25 +110,22 @@ enum VerifyingAlgorithm {
 }
 
 const _: () = {
-    impl<Payload: Serialize + for<'de> Deserialize<'de> + SendSyncOnThreaded + 'static> Clone
-        for Jwt<Payload>
-    {
+    impl<P> Clone for Jwt<P> {
         fn clone(&self) -> Self {
             Self {
                 _payload: PhantomData,
                 secret: self.secret.clone(),
                 alg: self.alg.clone(),
+                issuer: None,
+                audience: None,
                 get_token: self.get_token,
-
                 #[cfg(feature = "openapi")]
                 openapi_security: self.openapi_security.clone(),
             }
         }
     }
 
-    impl<Payload: Serialize + for<'de> Deserialize<'de> + SendSyncOnThreaded + 'static>
-        std::fmt::Debug for Jwt<Payload>
-    {
+    impl<P> std::fmt::Debug for Jwt<P> {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             f.debug_struct("Jwt")
                 .field("alg", &self.alg_str())
@@ -128,17 +135,14 @@ const _: () = {
         }
     }
 
-    impl<
-        Inner: FangProc + SendOnThreaded,
-        Payload: Serialize + for<'de> Deserialize<'de> + SendSyncOnThreaded + 'static,
-    > Fang<Inner> for Jwt<Payload>
+    impl<P> crate::FangAction for Jwt<P>
+    where
+        P: SendSyncOnThreaded + serde::de::DeserializeOwned + 'static,
     {
-        type Proc = JwtProc<Inner, Payload>;
-        fn chain(&self, inner: Inner) -> Self::Proc {
-            JwtProc {
-                inner,
-                jwt: self.clone(),
-            }
+        async fn fore<'b>(&'b self, req: &'b mut Request) -> Result<(), Response> {
+            let jwt_payload = self.verified(req)?;
+            req.context.set(jwt_payload);
+            Ok(())
         }
 
         #[cfg(feature = "openapi")]
@@ -149,48 +153,47 @@ const _: () = {
             operation.security(self.openapi_security(), &[])
         }
     }
-
-    pub struct JwtProc<
-        Inner: FangProc,
-        Payload: Serialize + for<'de> Deserialize<'de> + SendSyncOnThreaded + 'static,
-    > {
-        inner: Inner,
-        jwt: Jwt<Payload>,
-    }
-    impl<
-        Inner: FangProc + SendOnThreaded,
-        Payload: Serialize + for<'de> Deserialize<'de> + SendSyncOnThreaded + 'static,
-    > FangProc for JwtProc<Inner, Payload>
-    {
-        async fn bite<'b>(&'b self, req: &'b mut Request) -> Response {
-            let jwt_payload = match self.jwt.verified(req) {
-                Ok(payload) => payload,
-                Err(errres) => return errres,
-            };
-            req.context.set(jwt_payload);
-
-            self.inner.bite(req).await.into_response()
-        }
-    }
 };
 
-impl<Payload: Serialize + for<'de> Deserialize<'de> + SendSyncOnThreaded + 'static> Jwt<Payload> {
-    /// Just `new_256`; use HMAC-SHA256 as verifying algorithm
-    #[inline]
+impl<P> Jwt<P> {
+    #[deprecated(since = "0.24.8", note = "use `Jwt::new_hs256` instead.")]
     pub fn default(secret: impl Into<Cow<'static, str>>) -> Self {
-        Self::new_256(secret)
+        Self::new_hs256(secret)
     }
-    /// Use HMAC-SHA256 as verifying algorithm
-    pub fn new_256(secret: impl Into<Cow<'static, str>>) -> Self {
+    /// Use HMAC-SHA256 as verification algorithm
+    pub fn new_hs256(secret: impl Into<Cow<'static, str>>) -> Self {
         Self::new(VerifyingAlgorithm::HS256, secret)
     }
-    /// Use HMAC-SHA384 as verifying algorithm
-    pub fn new_384(secret: impl Into<Cow<'static, str>>) -> Self {
+    #[deprecated(since = "0.24.8", note = "use `Jwt::new_hs256` instead.")]
+    pub fn new_256(secret: impl Into<Cow<'static, str>>) -> Self {
+        Self::new_hs256(secret)
+    }
+    /// Use HMAC-SHA384 as verification algorithm
+    pub fn new_hs384(secret: impl Into<Cow<'static, str>>) -> Self {
         Self::new(VerifyingAlgorithm::HS384, secret)
     }
-    /// Use HMAC-SHA512 as verifying algorithm
-    pub fn new_512(secret: impl Into<Cow<'static, str>>) -> Self {
+    #[deprecated(since = "0.24.8", note = "use `Jwt::new_hs384` instead.")]
+    pub fn new_384(secret: impl Into<Cow<'static, str>>) -> Self {
+        Self::new_hs384(secret)
+    }
+    /// Use HMAC-SHA512 as verification algorithm
+    pub fn new_hs512(secret: impl Into<Cow<'static, str>>) -> Self {
         Self::new(VerifyingAlgorithm::HS512, secret)
+    }
+    #[deprecated(since = "0.24.8", note = "use `Jwt::new_hs512` instead.")]
+    pub fn new_512(secret: impl Into<Cow<'static, str>>) -> Self {
+        Self::new_hs512(secret)
+    }
+
+    /// Set issuer; used for `iss` claim verification
+    pub fn with_issuer(mut self, iss: impl Into<String>) -> Self {
+        self.issuer = Some(iss.into().into_boxed_str());
+        self
+    }
+    /// Set audience; used for `aud` claim verification
+    pub fn with_audience(mut self, aud: impl Into<String>) -> Self {
+        self.audience = Some(aud.into().into_boxed_str());
+        self
     }
 
     /// Customize get-token process in JWT verifying.
@@ -199,7 +202,6 @@ impl<Payload: Serialize + for<'de> Deserialize<'de> + SendSyncOnThreaded + 'stat
     pub fn get_token_by(
         mut self,
         get_token: fn(&Request) -> Option<&str>,
-
         #[cfg(feature = "openapi")] openapi_security: crate::openapi::security::SecurityScheme,
     ) -> Self {
         #[cfg(feature = "openapi")]
@@ -228,6 +230,8 @@ impl<Payload: Serialize + for<'de> Deserialize<'de> + SendSyncOnThreaded + 'stat
         Self {
             alg,
             get_token,
+            issuer: None,
+            audience: None,
 
             _payload: PhantomData,
             secret: secret.into(),
@@ -282,15 +286,30 @@ const _: () = {
     }
 };
 
-impl<Payload: Serialize + for<'de> Deserialize<'de> + SendSyncOnThreaded + 'static> Jwt<Payload> {
+impl<P: Serialize> Jwt<P> {
     /// Build JWT token with the payload.
     #[inline]
-    pub fn issue(self, payload: Payload) -> JwtToken {
+    pub fn issue(self, payload: P) -> JwtToken {
+        #[derive(Serialize)]
+        struct JwtPayload<U> {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            iss: Option<Box<str>>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            aud: Option<Box<str>>,
+            #[serde(flatten)]
+            user_payload: U,
+        }
+
         let unsigned_token = {
             let mut ut = crate::util::base64_url_encode(self.header_str());
             ut.push('.');
             ut.push_str(&crate::util::base64_url_encode(
-                ::serde_json::to_vec(&payload).expect("Failed to serialze payload"),
+                ::serde_json::to_vec(&JwtPayload {
+                    iss: self.issuer,
+                    aud: self.audience,
+                    user_payload: payload,
+                })
+                .expect("Failed to serialze payload"),
             ));
             ut
         };
@@ -325,7 +344,7 @@ impl<Payload: Serialize + for<'de> Deserialize<'de> + SendSyncOnThreaded + 'stat
     }
 }
 
-impl<Payload: Serialize + for<'de> Deserialize<'de> + SendSyncOnThreaded + 'static> Jwt<Payload> {
+impl<P: serde::de::DeserializeOwned> Jwt<P> {
     /// Verify JWT in requests' `Authorization` header and early return error response if
     /// it's missing or malformed.
     pub fn verify(&self, req: &Request) -> Result<(), Response> {
@@ -337,7 +356,7 @@ impl<Payload: Serialize + for<'de> Deserialize<'de> + SendSyncOnThreaded + 'stat
     /// it's missing or malformed.
     ///
     /// Then it's valid, this returns decoded paylaod of the JWT as `Payload`.
-    pub fn verified(&self, req: &Request) -> Result<Payload, Response> {
+    pub fn verified(&self, req: &Request) -> Result<P, Response> {
         (!req.method.isOPTIONS())
             .then_some(())
             .ok_or_else(Response::OK)?;
@@ -396,6 +415,31 @@ impl<Payload: Serialize + for<'de> Deserialize<'de> + SendSyncOnThreaded + 'stat
         {
             return Err(Response::Unauthorized().with_text(UNAUTHORIZED_MESSAGE));
         }
+        if let Some(issuer) = &self.issuer {
+            let is_valid_iss = payload
+                .get("iss")
+                .is_some_and(|v| v.as_str() == Some(&**issuer));
+            if !is_valid_iss {
+                return Err(Response::Unauthorized().with_text(UNAUTHORIZED_MESSAGE));
+            }
+        }
+        if let Some(audience) = &self.audience {
+            let is_valid_aud = payload.get("aud").is_some_and(|aud| {
+                if let Some(aud) = aud.as_str() {
+                    aud == &**audience
+                } else if let Some(auds) = aud.as_array() {
+                    auds.iter()
+                        .filter_map(|v| v.as_str())
+                        .find(|&aud| aud == &**audience)
+                        .is_some()
+                } else {
+                    false
+                }
+            });
+            if !is_valid_aud {
+                return Err(Response::Unauthorized().with_text(UNAUTHORIZED_MESSAGE));
+            }
+        }
 
         let signature_part = parts.next().ok_or_else(Response::Unauthorized)?;
         let requested_signature =
@@ -429,8 +473,11 @@ impl<Payload: Serialize + for<'de> Deserialize<'de> + SendSyncOnThreaded + 'stat
                 }
             }
         };
-
         if !is_correct_signature {
+            return Err(Response::Unauthorized().with_text(UNAUTHORIZED_MESSAGE));
+        }
+
+        if parts.next().is_some() {
             return Err(Response::Unauthorized().with_text(UNAUTHORIZED_MESSAGE));
         }
 
@@ -456,22 +503,96 @@ mod test {
 
     #[test]
     fn test_jwt_issue() {
-        /* NOTE:
-            `serde_json::to_vec` automatically sorts original object's keys
-            in alphabetical order. e.t., here
+        /* defining structs, instead of using `serde_json::json!`, to control fields order */
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct Payload {
+            iat: u64,
+            id: u64,
+            name: &'static str,
+        }
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct PayloadWithIss {
+            iss: &'static str,
+            iat: u64,
+            id: u64,
+            name: &'static str,
+        }
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct PayloadWithAud {
+            aud: &'static str,
+            iat: u64,
+            id: u64,
+            name: &'static str,
+        }
+        #[derive(serde::Serialize, serde::Deserialize)]
+        struct PayloadWithIssAud {
+            iss: &'static str,
+            aud: &'static str,
+            iat: u64,
+            id: u64,
+            name: &'static str,
+        }
 
-            ```
-            json!({"name":"kanarus","id":42,"iat":1516239022})
-            ```
-            is serialzed to
-
-            ```raw literal
-            {"iat":1516239022,"id":42,"name":"kanarus"}
-            ```
-        */
         assert_eq! {
-            &*Jwt::default("secret").issue(::serde_json::json!({"name":"kanarus","id":42,"iat":1516239022})),
+            &*Jwt::new_hs256("secret").issue(Payload {
+                iat: 1516239022,
+                id: 42,
+                name: "kanarus"
+            }),
             "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE1MTYyMzkwMjIsImlkIjo0MiwibmFtZSI6ImthbmFydXMifQ.dt43rLwmy4_GA_84LMC1m5CwVc59P9as_nRFldVCH7g"
+        }
+
+        assert_eq! {
+            Jwt::new_hs256("secret")
+                .with_issuer("https://auth.example.com")
+                .issue(Payload {
+                    iat: 1516239022,
+                    id: 42,
+                    name: "kanarus"
+                }),
+            Jwt::new_hs256("secret")
+                .issue(PayloadWithIss {
+                    iss: "https://auth.example.com",
+                    iat: 1516239022,
+                    id: 42,
+                    name: "kanarus"
+                })
+        }
+
+        assert_eq! {
+            Jwt::new_hs256("secret")
+                .with_audience("https://auth.example.com")
+                .issue(Payload {
+                    iat: 1516239022,
+                    id: 42,
+                    name: "kanarus"
+                }),
+            Jwt::new_hs256("secret")
+                .issue(PayloadWithAud {
+                    aud: "https://auth.example.com",
+                    iat: 1516239022,
+                    id: 42,
+                    name: "kanarus"
+                })
+        }
+
+        assert_eq! {
+            Jwt::new_hs256("secret")
+                .with_issuer("https://auth.example.com")
+                .with_audience("https://auth.example.com")
+                .issue(Payload {
+                    iat: 1516239022,
+                    id: 42,
+                    name: "kanarus"
+                }),
+            Jwt::new_hs256("secret")
+                .issue(PayloadWithIssAud {
+                    iss: "https://auth.example.com",
+                    aud: "https://auth.example.com",
+                    iat: 1516239022,
+                    id: 42,
+                    name: "kanarus"
+                })
         }
     }
 
@@ -481,36 +602,140 @@ mod test {
         use std::pin::Pin;
 
         let config = crate::Config::new();
+        macro_rules! verified {
+            ($jwt:expr, $method:ident $path:literal { $($headername:literal: $headervalue:expr),* }) => {
+                {
+                    let test_req = TestRequest::$method($path);
+                    $(
+                        let test_req = test_req.header($headername, $headervalue);
+                    )*
+                    let req_bytes = test_req.encode();
 
-        let my_jwt =
-            Jwt::<::serde_json::Value>::default("ohkami-realworld-jwt-authorization-secret-key");
+                    let mut req = Request::uninit(crate::util::IP_0000, &config);
+                    let mut req = Pin::new(&mut req);
+                    crate::__rt__::testing::block_on(req.as_mut().read(&mut &req_bytes[..], &config)).unwrap();
 
-        let req_bytes = TestRequest::GET("/")
-            .header("Authorization", "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3MDY4MTEwNzUsInVzZXJfaWQiOiI5ZmMwMDViMi1mODU4LTQzMzYtODkwYS1mMWEyYWVmNjBhMjQifQ.AKp-0zvKK4Hwa6qCgxskckD04Snf0gpSG7U1LOpcC_I")
-            .encode();
-        let mut req_bytes = &req_bytes[..];
-        let mut req = Request::uninit(crate::util::IP_0000, &config);
-        let mut req = Pin::new(&mut req);
-        crate::__rt__::testing::block_on(req.as_mut().read(&mut req_bytes, &config)).unwrap();
+                    $jwt.verified(&req.as_ref())
+                }
+            };
+        }
 
-        assert_eq!(
-            my_jwt.verified(&req.as_ref()).unwrap(),
-            ::serde_json::json!({ "iat": 1706811075, "user_id": "9fc005b2-f858-4336-890a-f1a2aef60a24" })
-        );
+        let j =
+            Jwt::<::serde_json::Value>::new_hs256("ohkami-realworld-jwt-authorization-secret-key");
+        {
+            assert_eq!(
+                verified!(j, GET "/" {
+                    "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3MDY4MTEwNzUsInVzZXJfaWQiOiI5ZmMwMDViMi1mODU4LTQzMzYtODkwYS1mMWEyYWVmNjBhMjQifQ.AKp-0zvKK4Hwa6qCgxskckD04Snf0gpSG7U1LOpcC_I"
+                }).unwrap(),
+                ::serde_json::json!({
+                    "iat": 1706811075,
+                    "user_id": "9fc005b2-f858-4336-890a-f1a2aef60a24"
+                })
+            );
 
-        let req_bytes = TestRequest::GET("/")
-            // Modifed last `I` of the value above to `X`
-            .header("Authorization", "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3MDY4MTEwNzUsInVzZXJfaWQiOiI5ZmMwMDViMi1mODU4LTQzMzYtODkwYS1mMWEyYWVmNjBhMjQifQ.AKp-0zvKK4Hwa6qCgxskckD04Snf0gpSG7U1LOpcC_X")
-            .encode();
-        let mut req_bytes = &req_bytes[..];
-        let mut req = Request::uninit(crate::util::IP_0000, &config);
-        let mut req = Pin::new(&mut req);
-        crate::__rt__::testing::block_on(req.as_mut().read(&mut req_bytes, &config)).unwrap();
+            assert_eq!(
+                verified!(j, GET "/" {
+                    // modifed last `I` of the value above to `X`
+                    "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3MDY4MTEwNzUsInVzZXJfaWQiOiI5ZmMwMDViMi1mODU4LTQzMzYtODkwYS1mMWEyYWVmNjBhMjQifQ.AKp-0zvKK4Hwa6qCgxskckD04Snf0gpSG7U1LOpcC_X"
+                }).unwrap_err().status,
+                Status::Unauthorized
+            );
+        }
 
-        assert_eq!(
-            my_jwt.verified(&req.as_ref()).unwrap_err().status,
-            Status::Unauthorized
-        );
+        let j = j.with_issuer("https://auth.example.com");
+        {
+            assert_eq!(
+                verified!(j, GET "/" {
+                    // the same value as the first Request!()
+                    "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3MDY4MTEwNzUsInVzZXJfaWQiOiI5ZmMwMDViMi1mODU4LTQzMzYtODkwYS1mMWEyYWVmNjBhMjQifQ.AKp-0zvKK4Hwa6qCgxskckD04Snf0gpSG7U1LOpcC_I"
+                }).unwrap_err().status,
+                Status::Unauthorized /* no iss */
+            );
+
+            assert_eq!(
+                verified!(j, GET "/" {
+                    "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3MDY4MTEwNzUsImlzcyI6Imh0dHBzOi8vYXV0aC5leGFtcGxlLmNvbSIsInVzZXJfaWQiOiI5ZmMwMDViMi1mODU4LTQzMzYtODkwYS1mMWEyYWVmNjBhMjQifQ.JNiqosTtnQPDz5KcrvJO2KO-qBf__RKPUr8HA_-NlCU"
+                }).unwrap(),
+                ::serde_json::json!({
+                    "iat": 1706811075,
+                    "iss": "https://auth.example.com", // <-- iss
+                    "user_id": "9fc005b2-f858-4336-890a-f1a2aef60a24"
+                })
+            );
+        }
+
+        let j = j.with_issuer("https://auth2.example.com");
+        {
+            assert_eq!(
+                verified!(j, GET "/" {
+                    // the sample value as the previous valid one (with "iss": "https://auth.example.com")
+                    "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3MDY4MTEwNzUsImlzcyI6Imh0dHBzOi8vYXV0aC5leGFtcGxlLmNvbSIsInVzZXJfaWQiOiI5ZmMwMDViMi1mODU4LTQzMzYtODkwYS1mMWEyYWVmNjBhMjQifQ.JNiqosTtnQPDz5KcrvJO2KO-qBf__RKPUr8HA_-NlCU"
+                }).unwrap_err().status,
+                Status::Unauthorized /* iss exists but invalid */
+            );
+
+            assert_eq!(
+                verified!(j, GET "/" {
+                    "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3MDY4MTEwNzUsImlzcyI6Imh0dHBzOi8vYXV0aDIuZXhhbXBsZS5jb20iLCJ1c2VyX2lkIjoiOWZjMDA1YjItZjg1OC00MzM2LTg5MGEtZjFhMmFlZjYwYTI0In0.gt7tuj2ouxaVjHJm0kizhF-be3z79AELGtfLAx69pjE"
+                }).unwrap(),
+                ::serde_json::json!({
+                    "iat": 1706811075,
+                    "iss": "https://auth2.example.com", // <-- new iss
+                    "user_id": "9fc005b2-f858-4336-890a-f1a2aef60a24"
+                })
+            );
+        }
+
+        let j = j.with_audience("https://auth2.example.com");
+        {
+            assert_eq!(
+                verified!(j, GET "/" {
+                    // the sample value as the previous valid one (with "iss": "https://auth2.example.com")
+                    "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3MDY4MTEwNzUsImlzcyI6Imh0dHBzOi8vYXV0aDIuZXhhbXBsZS5jb20iLCJ1c2VyX2lkIjoiOWZjMDA1YjItZjg1OC00MzM2LTg5MGEtZjFhMmFlZjYwYTI0In0.gt7tuj2ouxaVjHJm0kizhF-be3z79AELGtfLAx69pjE"
+                }).unwrap_err().status,
+                Status::Unauthorized /* missing aud */
+            );
+
+            assert_eq!(
+                verified!(j, GET "/" {
+                    "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJodHRwczovL2F1dGgyLmV4YW1wbGUuY29tIiwiaWF0IjoxNzA2ODExMDc1LCJpc3MiOiJodHRwczovL2F1dGgyLmV4YW1wbGUuY29tIiwidXNlcl9pZCI6IjlmYzAwNWIyLWY4NTgtNDMzNi04OTBhLWYxYTJhZWY2MGEyNCJ9.7F8ZeHeunaJc9wEKxU3-t3N-YcypZ6H4T3CgcTWPj9c"
+                }).unwrap(),
+                ::serde_json::json!({
+                    "aud": "https://auth2.example.com", // <-- aud
+                    "iat": 1706811075,
+                    "iss": "https://auth2.example.com",
+                    "user_id": "9fc005b2-f858-4336-890a-f1a2aef60a24"
+                })
+            );
+
+            assert_eq!(
+                verified!(j, GET "/" {
+                    "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhdWQiOlsiaHR0cHM6Ly9hdXRoMi5leGFtcGxlLmNvbSIsImh0dHBzOi8vYXV0aC5leGFtcGxlLmNvbSJdLCJpYXQiOjE3MDY4MTEwNzUsImlzcyI6Imh0dHBzOi8vYXV0aDIuZXhhbXBsZS5jb20iLCJ1c2VyX2lkIjoiOWZjMDA1YjItZjg1OC00MzM2LTg5MGEtZjFhMmFlZjYwYTI0In0.3MoJtxjO9QII5syDE8X2C1g9kCcCU7mVyH1PXtN78Zg"
+                }).unwrap(),
+                ::serde_json::json!({
+                    "aud": ["https://auth2.example.com", "https://auth.example.com"], // <-- array aud
+                    "iat": 1706811075,
+                    "iss": "https://auth2.example.com",
+                    "user_id": "9fc005b2-f858-4336-890a-f1a2aef60a24"
+                })
+            );
+
+            assert_eq!(
+                verified!(j, GET "/" {
+                    // same as above, but set "aud": []
+                    "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhdWQiOltdLCJpYXQiOjE3MDY4MTEwNzUsImlzcyI6Imh0dHBzOi8vYXV0aDIuZXhhbXBsZS5jb20iLCJ1c2VyX2lkIjoiOWZjMDA1YjItZjg1OC00MzM2LTg5MGEtZjFhMmFlZjYwYTI0In0.y5pAokOSPEKVWtTxjCj9U-YGI_ylIxM3F0uDpkXl_oQ"
+                }).unwrap_err().status,
+                Status::Unauthorized // aud exists but invalid (array uncontaining matching string)
+            );
+
+            assert_eq!(
+                verified!(j, GET "/" {
+                    // same as above, but set "aud": "http://auth2.example.com" (modified `https` -> `http`)
+                    "Authorization": "Bearer eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJodHRwOi8vYXV0aDIuZXhhbXBsZS5jb20iLCJpYXQiOjE3MDY4MTEwNzUsImlzcyI6Imh0dHBzOi8vYXV0aDIuZXhhbXBsZS5jb20iLCJ1c2VyX2lkIjoiOWZjMDA1YjItZjg1OC00MzM2LTg5MGEtZjFhMmFlZjYwYTI0In0.86zygyt_ex-sj9mQe2bY3ZuNZXURUCnTP0wkasE0-GQ"
+                }).unwrap_err().status,
+                Status::Unauthorized // aud exists but inlvaid (string unmatch)
+            );
+        }
     }
 
     #[test]
@@ -523,7 +748,7 @@ mod test {
         use crate::openapi;
 
         fn my_jwt() -> Jwt<MyJwtPayload> {
-            Jwt::default("myverysecretjwtsecretkey")
+            Jwt::new_hs256("myverysecretjwtsecretkey")
         }
 
         #[derive(serde::Serialize, serde::Deserialize)]

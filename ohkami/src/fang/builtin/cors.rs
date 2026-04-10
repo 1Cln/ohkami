@@ -1,4 +1,5 @@
 use crate::{Fang, FangProc, Request, Response, Status, header::append};
+use std::borrow::Cow;
 
 /// # Builtin fang for CORS config
 ///
@@ -34,31 +35,31 @@ pub struct Cors {
 #[derive(Clone, Debug)]
 pub(crate) enum AccessControlAllowOrigin {
     Any,
-    // This sould be `&'static _` in order to avoid repeated allocations
-    // in `.access_control_allow_origin(...)` in the [`bite` impl](CorsProc::bite).
-    Only(&'static str),
+    // `.access_control_allow_origin(...)` in the [`bite` impl](CorsProc::bite) requires accepts `Cow<'static, str>` so
+    // it will be cheap copy if user supplies as with static string ahead of time
+    Only(Cow<'static, str>),
 }
+
 impl AccessControlAllowOrigin {
     #[inline(always)]
     pub(crate) const fn is_any(&self) -> bool {
         matches!(self, Self::Any)
     }
 
-    pub(crate) fn new(s: impl Into<String>) -> Result<Self, &'static str> {
-        // This is safe and standard practice, since `Cors` (the only user of `AccessControlAllowOrigin`)
-        // is created only once at startup and persist for the entire serving process.
-        let s: &'static str = String::leak(s.into());
-        match s {
+    pub(crate) fn new(s: impl Into<Cow<'static, str>>) -> Result<Self, &'static str> {
+        let s = s.into();
+        match s.as_ref() {
             "*" => Ok(Self::Any),
-            _ => super::validate_origin(s).map(|_| Self::Only(s)),
+            _ => super::validate_origin(&s).map(|_| Self::Only(s)),
         }
     }
 
     #[inline(always)]
-    pub(crate) const fn as_str(&self) -> &'static str {
+    //This will perform expensive copy only if user provided dynamic string
+    pub(crate) fn get_cow(&self) -> Cow<'static, str> {
         match self {
-            Self::Any => "*",
-            Self::Only(origin) => origin,
+            Self::Any => Cow::Borrowed("*"),
+            Self::Only(origin) => origin.clone(),
         }
     }
 }
@@ -66,11 +67,22 @@ impl AccessControlAllowOrigin {
 impl Cors {
     /// Create `Cors` fang using given `origin` as `Access-Control-Allow-Origin` header value.\
     /// (Both `"*"` and a specific origin are available)
-    #[allow(non_snake_case)]
-    pub fn new(origin: impl Into<String>) -> Self {
+    pub fn new(origin: impl Into<Cow<'static, str>>) -> Self {
         Self {
             allow_origin: AccessControlAllowOrigin::new(origin)
                 .unwrap_or_else(|err| panic!("[Cors::new] {err}")),
+            allow_credentials: false,
+            allow_headers: None,
+            expose_headers: None,
+            max_age: None,
+        }
+    }
+
+    #[inline]
+    /// Creates `Cors` with any origin allowed
+    pub const fn any() -> Self {
+        Self {
+            allow_origin: AccessControlAllowOrigin::Any,
             allow_credentials: false,
             allow_headers: None,
             expose_headers: None,
@@ -110,6 +122,101 @@ impl Cors {
         self.max_age = delta_seconds;
         self
     }
+    pub fn verify_origin<'a>(origin: &'a str, allow_origin: Cow<'a, str>) -> Cow<'a ,str> {
+        //Check protocol being the same and character count being within limit, if not return.
+        let Some((protocol, rest)) = origin.split_once("://") else {
+            return allow_origin;
+        };
+        let Some((allow_protocol, allow_rest)) = allow_origin.split_once("://") else {
+            return allow_origin;
+        };
+
+        if protocol == allow_protocol && origin.chars().count() <= 253 {
+            let (allow_host, allow_port) = allow_rest
+                .split_once(':')
+                .map_or((allow_rest, None), |(h, p)| (h, Some(p)));
+
+            //No wildcards in Cors at all, return default
+            if !allow_host.starts_with("*.") && allow_port.is_some_and(|p| p != "*") {
+                return allow_origin;
+            }
+
+            let (host, port) = rest
+                .split_once(':')
+                .map_or((rest, None), |(h, p)| (h, Some(p)));
+            //If no port wildcard in Cors, enforce similarity
+            if allow_port.is_some_and(|p| p != "*") {
+                if port != allow_port {
+                    return allow_origin;
+                }
+            }
+
+            if !allow_host.starts_with("*.") {
+                if host != allow_host {
+                    return allow_origin
+                }
+            }
+
+            //Port must be in range of u16, and must be either * or a string of numbers.
+            if port.is_some_and(|p| p.parse::<u16>().is_err()) {
+                return allow_origin;
+            }
+
+            //Origin host must not be empty and only contain up to 63 characters from a-Z, 0-9, '-', '*'.
+            if !host.split('.').all(|part| {
+                !part.is_empty()
+                    && part.chars().all(|c| matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-')
+                    && part.chars().count() <= 63)
+            }) {
+                return allow_origin;
+            }
+
+            let Some((subdomain, sld)) = host.split_once('.') else {
+                return allow_origin;
+            };
+            let Some((allow_subdomain, allow_sld)) = allow_host.split_once('.') else {
+                return allow_origin;
+            };
+
+            //The latter parts of the host must exactly match, as there's no allowed wildcards here.
+            if sld != allow_sld {
+                return allow_origin;
+            }
+
+            //If the request is from an IP address, which cannot have a subdomain, and there's a port wildcard, return origin, otherwise default.
+            if sld.split('.').all(|part| part.chars().all(|c| c.is_numeric())) {
+                return if allow_port.is_some_and(|p| p == "*") && subdomain != "*" {
+                    Cow::Borrowed(origin)
+                } else {
+                    allow_origin
+                }
+            }
+
+            //If subdomain is only alphanumeric characters and there's no wildcard, the subdomain must exactly match.
+            if subdomain.chars().all(|c| c.is_ascii_alphanumeric()) {
+                if allow_subdomain != "*" {
+                    if subdomain != allow_subdomain {
+                        return allow_origin;
+                    }
+                    if allow_port.is_some_and(|p| p == "*") {
+                        //Subdomain is valid, and port doesn't matter, return request origin
+                        return Cow::Borrowed(origin)
+                    }
+                } else if allow_port.is_some_and(|p| p != "*") {
+                    return if port == allow_port {
+                        //Subdomain is wildcard, port is valid
+                        Cow::Borrowed(origin)
+                    } else {
+                        allow_origin
+                    };
+                } else {
+                    //Subdomain is a wildcard and so is the port
+                    return Cow::Borrowed(origin)
+                }
+            }
+        }
+        allow_origin //No wildcards
+    }
 }
 
 impl<Inner: FangProc> Fang<Inner> for Cors {
@@ -130,10 +237,11 @@ pub struct CorsProc<Inner: FangProc> {
 impl<Inner: FangProc> FangProc for CorsProc<Inner> {
     async fn bite<'b>(&'b self, req: &'b mut Request) -> Response {
         let mut res = self.inner.bite(req).await;
+        let allow_origin = Cors::verify_origin(req.headers.origin().unwrap_or_else(|| ""), self.cors.allow_origin.get_cow()).into_owned();
 
         res.headers
             .set()
-            .access_control_allow_origin(self.cors.allow_origin.as_str())
+            .access_control_allow_origin(allow_origin)
             .vary(self.cors.allow_origin.is_any().then_some("Origin".into()))
             .access_control_allow_credentials(self.cors.allow_credentials.then_some("true".into()))
             .access_control_expose_headers(
@@ -172,6 +280,52 @@ impl<Inner: FangProc> FangProc for CorsProc<Inner> {
 mod test {
 
     #[test]
+    fn cors_accept_regular_ip() {
+        assert_eq!("https://192.168.1.41:5173", super::Cors::verify_origin("https://192.168.1.41:5173", std::borrow::Cow::Borrowed("https://192.168.1.41:5173")))
+    }
+
+    #[test]
+    fn cors_accept_regular_domain() {
+        assert_eq!("https://example.com", super::Cors::verify_origin("https://example.com", std::borrow::Cow::Borrowed("https://example.com")));
+        assert_eq!("https://sub.example.com", super::Cors::verify_origin("https://sub.example.com", std::borrow::Cow::Borrowed("https://sub.example.com")))
+    }
+
+    #[test]
+    fn cors_accept_wildcard_in_ip_port() {
+        assert_eq!("https://192.168.1.41:5173", super::Cors::verify_origin("https://192.168.1.41:5173", std::borrow::Cow::Borrowed("https://192.168.1.41:*")))
+    }
+
+    #[test]
+    fn cors_accept_wildcard_in_port() {
+        assert_eq!("https://example.com:5173", super::Cors::verify_origin("https://example.com:5173", std::borrow::Cow::Borrowed("https://example.com:*")))
+    }
+
+    #[test]
+    fn cors_accept_wildcard_in_subdomain() {
+        assert_eq!("https://test.example.com", super::Cors::verify_origin("https://test.example.com", std::borrow::Cow::Borrowed("https://*.example.com")))
+    }
+
+    #[test]
+    fn cors_deny_wildcard_in_ip_subdomain() {
+        assert_eq!("https://192.168.1.0:8080", super::Cors::verify_origin("https://192.*.1.0:8080", std::borrow::Cow::Borrowed("https://192.168.1.0:8080")))
+    }
+
+    #[test]
+    fn cors_deny_wildcard_in_sld() {
+        assert_eq!("https://test.example.com:8080", super::Cors::verify_origin("https://test.*.com:8080", std::borrow::Cow::Borrowed("https://test.example.com:8080")))
+    }
+
+    #[test]
+    fn cors_deny_invalid_ip() {
+        assert_eq!("https://192.168.1.0:8080", super::Cors::verify_origin("https://192.168.a.0:8080", std::borrow::Cow::Borrowed("https://192.168.1.0:8080")))
+    }
+
+    #[test]
+    fn cors_deny_invalid_ip_port_range() {
+        assert_eq!("https://192.168.1.0:8080", super::Cors::verify_origin("https://192.168.1.0:80080", std::borrow::Cow::Borrowed("https://192.168.1.0:8080")))
+    }
+
+    #[test]
     fn cors_new_with_str_or_string() {
         let _: super::Cors = super::Cors::new("https://example.com");
         let _: super::Cors = super::Cors::new(String::from("https://") + "example.com");
@@ -205,7 +359,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "invalid origin: port must be a number or wildcard '*'.")]
+    #[should_panic(expected = "[Cors::new] invalid origin: port must be a number between 0 and 65535 or wildcard '*'.")]
     fn cors_port_invalidation() {
         let _: super::Cors = super::Cors::new("http://example.com:abcd");
     }

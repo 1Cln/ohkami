@@ -20,9 +20,9 @@ workspace = true
 
 [dependencies]
 # workspace members
-ohkami_lib     = { version = "=0.24.5", path = "../ohkami_lib" }
-ohkami_macros  = { version = "=0.24.5", path = "../ohkami_macros" }
-ohkami_openapi = { optional = true, version = "=0.24.5", path = "../ohkami_openapi" }
+ohkami_lib     = { version = "=0.24.8", path = "../ohkami_lib" }
+ohkami_macros  = { version = "=0.24.8", path = "../ohkami_macros" }
+ohkami_openapi = { optional = true, version = "=0.24.8", path = "../ohkami_openapi" }
 
 # workspace dependencies
 byte_reader = { workspace = true }
@@ -38,13 +38,13 @@ monoio         = { version = "0.2",  optional = true, features = ["signal"] }
 monoio-compat  = { version = "0.2",  optional = true }
 compio         = { version = "0.18", optional = true, features = ["io-compat", "time"] }
 worker         = { version = "0.7",  optional = true }
-lambda_runtime = { version = "1.0", optional = true }
+lambda_runtime = { version = "1.1", optional = true }
 
 # encoding / crypto
 base64 = { version = "0.22" }
 hmac   = { version = "0.12", default-features = false }
 sha2   = { version = "0.10", default-features = false }
-uuid   = { version = "1.21" }
+uuid   = { version = "1.22" }
 
 # optional
 mime_guess   = { version = "2.0", optional = true }
@@ -54,6 +54,8 @@ mews         = { version = "0.5",  optional = true }
 rustls       = { version = "0.23", optional = true }
 anysc-rustls = { version = "0.1", optional = true }
 
+# logging
+tracing = { version = "0.1", optional = true, default-features = false }
 
 [features]
 rt_tokio = ["__rt_native__", "__rt_threaded__", "__io_tokio__",
@@ -105,14 +107,12 @@ DEBUG = ["tokio?/rt-multi-thread", "tokio?/macros"]
 #    "sse",
 #    "ws",
 #    "tls",
-#    #"rt_tokio",
-#    #"rt_smol",
-#    "rt_nio",
-#    #"rt_glommio",
-#    #"rt_worker",
+#    "rt_tokio",
 #    "DEBUG",
 # ]
 
+##### Logging customization #####
+internal-log-tracing = ["dep:tracing"]
 
 [dev-dependencies] # for doc test
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "macros"] }
