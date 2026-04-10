@@ -173,7 +173,7 @@ impl Cors {
                 return allow_origin;
             }
 
-            // For local development on localhost there will be nothing to split after this.
+            // For local development on localhost there will be nothingto split after this.
             if allow_host == "localhost" && host == allow_host {
                 return Cow::Borrowed(origin);
             }
@@ -292,7 +292,6 @@ impl<Inner: FangProc> FangProc for CorsProc<Inner> {
 
 #[cfg(test)]
 mod test {
-
     #[test]
     fn cors_accept_regular_ip() {
         assert_eq!(
