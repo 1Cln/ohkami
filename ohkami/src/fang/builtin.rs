@@ -16,7 +16,7 @@ pub use context::Context;
 pub mod enamel;
 pub use enamel::Enamel;
 
-use http::uri::{InvalidUri, Uri};
+use http::uri::Uri;
 
 #[cfg(feature = "__rt_native__")]
 mod timeout;
@@ -24,7 +24,7 @@ mod timeout;
 pub use timeout::Timeout;
 
 fn validate_origin(origin: &str) -> Result<(), &'static str> {
-    if let Ok(_) = origin.parse::<Uri>() {
+    if origin.parse::<Uri>().is_ok() {
         Ok(())
     } else {
         Err("Unable to parse Uri.")
