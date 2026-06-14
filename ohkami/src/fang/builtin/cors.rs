@@ -1,5 +1,58 @@
 use crate::{Fang, FangProc, Request, Response, Status, header::append};
+use core::todo;
 use std::borrow::Cow;
+
+use super::OriginError;
+
+// cors.rs
+
+/* This replaces current `AccessControlAllowOrigin` */
+struct CorsOrigin {
+    base_origin: super::Origin,
+    any_port: bool,
+    any_subdomain: bool,
+}
+
+enum CorsOriginError {
+    InvalidOrigin(OriginError)
+}
+
+impl CorsOrigin {
+    /// Parse string based on the Cors origin string syntax.
+    fn new(s: &str) -> Result<Self, CorsOriginError> {
+        let mut s = Cow::Borrowed(s);
+        let mut any_port = false;
+        let mut any_subdomain = false;
+
+        if let Some(rest) = s.strip_suffix(":*") {
+            any_port = true;
+            s = Cow::Borrowed(rest);
+        }
+
+        if let Some((scheme @ ("http://" | "https://"), rest)) = s.split_once("*.") {
+            any_subdomain = true;
+            // This allocation would not be a problem because `CorsOrigin::new` is
+            // just called once in server initialization phase, not called repeatedly in request handling phases.
+            s = Cow::Owned(scheme.to_string() + rest);
+        }
+
+        let base_origin = super::Origin::new(&s)
+            .map_err(CorsOriginError::InvalidOrigin)?;
+
+        Ok(Self { base_origin, any_port, any_subdomain })
+    }
+
+    fn matches_str(&self, incoming_origin: &str) -> bool {
+        todo!("Write logic");
+        false
+    }
+
+    fn matches(&self, incoming_origin: &super::Origin) -> bool {
+        todo!("Write logic");
+        true
+        //...
+    }
+}
 
 /// # Builtin fang for CORS config
 ///
@@ -395,6 +448,17 @@ mod test {
     }
 
     #[test]
+    fn cors_deny_wildcard_in_extension() {
+        assert_eq!(
+            "https://test.example.com:8080",
+            super::Cors::verify_origin(
+                "https://test.example.*:8080",
+                std::borrow::Cow::Borrowed("https://test.example.com:8080")
+            )
+        )
+    }
+
+    #[test]
     fn cors_deny_invalid_ip() {
         assert_eq!(
             "https://192.168.1.0:8080",
@@ -435,14 +499,14 @@ mod test {
 
     #[test]
     #[should_panic(
-        expected = "invalid origin: 'http' or 'https' scheme is required at the start of the string."
+        expected = "[Cors::new] Unable to parse Uri."
     )]
     fn cors_scheme_invalidation() {
         let _: super::Cors = super::Cors::new("foobarhttp://example.com");
     }
 
     #[test]
-    #[should_panic(expected = "invalid origin: maximum length 253 for domain exceeded.")]
+    #[should_panic(expected = "[Cors::new] Unable to parse Uri.")]
     fn cors_length_invalidation() {
         let _: super::Cors = super::Cors::new(
             "https://abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcde.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijkl.com",
@@ -450,7 +514,7 @@ mod test {
     }
 
     #[test]
-    #[should_panic(expected = "invalid origin: invalid host.")]
+    #[should_panic(expected = "[Cors::new] Unable to parse Uri.")]
     fn cors_part_length_invalidation() {
         let _: super::Cors = super::Cors::new(
             "https://www.abcdefghijklmnopqrstuvwxyzabcdefghijklmnoqrstuvwxyzabcdefghijklmnopqrstuvwxyz.com",
@@ -459,7 +523,7 @@ mod test {
 
     #[test]
     #[should_panic(
-        expected = "[Cors::new] invalid origin: port must be a number between 0 and 65535 or wildcard '*'."
+        expected = "[Cors::new] Unable to parse Uri."
     )]
     fn cors_port_invalidation() {
         let _: super::Cors = super::Cors::new("http://example.com:abcd");
@@ -467,7 +531,7 @@ mod test {
 
     #[test]
     #[should_panic(
-        expected = "invalid origin: host must start with an alphanumeric character or wildcard '*'."
+        expected = "[Cors::new] Unable to parse Uri."
     )]
     fn cors_host_invalidation() {
         let _: super::Cors = super::Cors::new("http://%example.com");

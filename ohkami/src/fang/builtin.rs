@@ -16,7 +16,7 @@ pub use context::Context;
 pub mod enamel;
 pub use enamel::Enamel;
 
-use http::uri::Uri;
+use http::uri::{InvalidUri, Uri};
 
 #[cfg(feature = "__rt_native__")]
 mod timeout;
@@ -29,4 +29,84 @@ fn validate_origin(origin: &str) -> Result<(), &'static str> {
     } else {
         Err("Unable to parse Uri.")
     }
+}
+
+// builtin.rs
+
+/* #660 will replace this with an original struct
+   (providing almost the same interface as this
+   using original implementations internally)
+*/
+// Just wrapping `https::uri::Uri` for now
+// to skip most difficult things in parsing,
+// so we only have to handle HTTP-origin-specific rules
+// on the top of the generic `Uri`.
+struct Origin(Uri);
+
+enum OriginError {
+    InvalidUri(InvalidUri),
+    InvalidScheme,
+    InvalidPathLength,
+    InvalidPartLength,
+    InvalidPort,
+    //...
+}
+
+enum Scheme {
+    Http,
+    Https
+}
+
+impl Origin {
+    /* This replaces current `fn validate_origin` entirely */
+    /// Parse string into HTTP origin
+    fn new(s: &str) -> Result<Self, OriginError> {
+        use http::uri::{Uri, Scheme};
+
+        let uri = s.parse::<Uri>()
+            .map_err(OriginError::InvalidUri)?;
+
+        // Additional validation
+        // Validate scheme is HTTP or HTTPS
+        if let Some(scheme) = uri.scheme() {
+            if scheme != &Scheme::HTTP && scheme != &Scheme::HTTPS {
+                return Err(OriginError::InvalidScheme);
+            }
+        }
+
+        // Validate max path length
+        if uri.path().chars().count() > u8::MAX as usize {
+            return Err(OriginError::InvalidPathLength)
+        }
+
+        // Validate max part length
+        if !uri.path().split('.').all(|part| part.chars().count() <= 63) {
+            return Err(OriginError::InvalidPartLength)
+        }
+
+        // Make sure port isn't made out of letters, and doesn't exceed `u16::MAX`
+        if let Some(port) = uri.port() {
+            if port.as_u16() > u16::MAX {
+                return Err(OriginError::InvalidPort)
+            } else if port.as_str() != "" {
+                return Err(OriginError::InvalidPort)
+            }
+        }
+
+        // TODO: Add more if necessary
+
+        Ok(Self(uri))
+    }
+
+    // Accessor methods for origin components; for example:
+    fn scheme(&self) -> Scheme {
+        if self.0.scheme() == Some(&http::uri::Scheme::HTTP) {
+            Scheme::Http
+        } else {
+            Scheme::Https // definitely Https because of `Self::new` parser logic
+        }
+        // #606 will remove such heuristic if-else and then
+        // we just have to access `.scheme` field or something like that
+    }
+    // and more... (as needed)
 }
