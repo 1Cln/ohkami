@@ -1,25 +1,41 @@
 use crate::{Fang, FangProc, Request, Response, Status, header::append};
-use core::option::Option::Some;
 use std::borrow::Cow;
-
+use std::fmt::{Display, Formatter};
 use super::OriginError;
 
 // cors.rs
-
 /* This replaces current `AccessControlAllowOrigin` */
+#[derive(Clone, Debug)]
+enum CorsOriginValue {
+    CorsOrigin(CorsOrigin),
+    Any
+}
+
+#[derive(Clone, Debug)]
 struct CorsOrigin {
     base_origin: super::Origin,
     any_port: bool,
     any_subdomain: bool,
 }
 
+#[derive(Debug)]
 enum CorsOriginError {
     InvalidOrigin(OriginError)
 }
 
-impl CorsOrigin {
+impl Display for CorsOriginError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+impl CorsOriginValue {
     /// Parse string based on the Cors origin string syntax.
     fn new(s: &str) -> Result<Self, CorsOriginError> {
+        if s == "*" {
+            return Ok(Self::Any);
+        }
+
         let mut any_port = false;
         let mut any_subdomain = false;
         let mut s = match s.strip_suffix(":*") {
@@ -40,48 +56,73 @@ impl CorsOrigin {
         let base_origin = super::Origin::new(&s)
             .map_err(CorsOriginError::InvalidOrigin)?;
 
-        Ok(Self { base_origin, any_port, any_subdomain })
+        Ok(Self::CorsOrigin(CorsOrigin { base_origin, any_port, any_subdomain }) )
     }
 
     fn matches_str(&self, incoming_origin: &str) -> bool {
-        if let Some(("http://" | "https://", origin)) = incoming_origin.split_once("://") {
-            let (host, port) = origin
-                .split_once(':')
-                .map_or((origin, None), |(h, p)| (h, Some(p)));
+        match self {
+            CorsOriginValue::CorsOrigin(cors_origin) => {
+                if let Some(("http://" | "https://", origin)) = incoming_origin.split_once("://") {
+                    let (host, port) = origin
+                        .split_once(':')
+                        .map_or((origin, None), |(h, p)| (h, Some(p)));
 
-            // Check port if not wildcard, validate
-            if !self.any_port
-                && let Some(cors_port) = self.base_origin.port()
-                && Some(format!("{}", cors_port).as_str()) != port {
+                    // Check port if not wildcard, validate
+                    if !cors_origin.any_port
+                        && let Some(cors_port) = cors_origin.base_origin.port()
+                        && Some(format!("{}", cors_port).as_str()) != port {
 
-                return false;
+                        return false;
+                    }
+
+                    let (cors_subdomain, cors_domain) = cors_origin.base_origin.host_as_tuple();
+                    let (subdomain, domain) = host
+                        .split_once('.')
+                        .map_or((None, origin), |(s, d)| (Some(s), d));
+
+                    // If subdomain is not a wildcard, validate
+                    if !cors_origin.any_subdomain && cors_subdomain != subdomain {
+                        return false;
+                    }
+
+                    // Check if domain matches.
+                    if domain != cors_domain {
+                        return false;
+                    }
+
+                    true
+                } else {
+                    // No scheme was somehow found
+                    false
+                }
+
             }
-
-            let (cors_subdomain, cors_domain) = self.base_origin.host_as_tuple();
-            let (subdomain, domain) = host
-                .split_once('.')
-                .map_or((None, origin), |(s, d)| (Some(s), d));
-
-            // If subdomain is not a wildcard, validate
-            if !self.any_subdomain && cors_subdomain != subdomain {
-                return false;
+            CorsOriginValue::Any => {
+                // Anything goes
+                true
             }
-
-            // Check if domain matches.
-            if domain != cors_domain {
-                return false;
-            }
-
-            true
-        } else {
-            // No scheme was somehow found
-            false
         }
     }
 
     fn matches(&self, incoming_origin: &super::Origin) -> bool {
+        if self.is_any() {
+            return true;
+        }
         self.matches_str(incoming_origin.to_string().as_str())
     }
+
+    fn is_any(&self) -> bool {
+        matches!(self, Self::Any)
+    }
+
+    //     #[inline(always)]
+    //     //This will perform expensive copy only if user provided dynamic string
+    //     pub(crate) fn get_cow(&self) -> Cow<'static, str> {
+    //         match self {
+    //             Self::Any => Cow::Borrowed("*"),
+    //             Self::Only(origin) => origin.clone(),
+    //         }
+    //     }
 }
 
 /// # Builtin fang for CORS config
@@ -108,51 +149,51 @@ impl CorsOrigin {
 #[derive(Clone, Debug)]
 pub struct Cors {
     /* pub(crate) allow_methods: Option<String>, // owe to `Handler::default_not_found()` */
-    pub(crate) allow_origin: AccessControlAllowOrigin,
+    pub(crate) allow_origin: CorsOriginValue,
     pub(crate) allow_credentials: bool,
     pub(crate) allow_headers: Option<String>,
     pub(crate) expose_headers: Option<String>,
     pub(crate) max_age: Option<u32>,
 }
 
-#[derive(Clone, Debug)]
-pub(crate) enum AccessControlAllowOrigin {
-    Any,
-    // `.access_control_allow_origin(...)` in the [`bite` impl](CorsProc::bite) requires accepts `Cow<'static, str>` so
-    // it will be cheap copy if user supplies as with static string ahead of time
-    Only(Cow<'static, str>),
-}
-
-impl AccessControlAllowOrigin {
-    #[inline(always)]
-    pub(crate) const fn is_any(&self) -> bool {
-        matches!(self, Self::Any)
-    }
-
-    pub(crate) fn new(s: impl Into<Cow<'static, str>>) -> Result<Self, &'static str> {
-        let s = s.into();
-        match s.as_ref() {
-            "*" => Ok(Self::Any),
-            _ => super::validate_origin(&s).map(|_| Self::Only(s)),
-        }
-    }
-
-    #[inline(always)]
-    //This will perform expensive copy only if user provided dynamic string
-    pub(crate) fn get_cow(&self) -> Cow<'static, str> {
-        match self {
-            Self::Any => Cow::Borrowed("*"),
-            Self::Only(origin) => origin.clone(),
-        }
-    }
-}
+// #[derive(Clone, Debug)]
+// pub(crate) enum AccessControlAllowOrigin {
+//     Any,
+//     // `.access_control_allow_origin(...)` in the [`bite` impl](CorsProc::bite) requires accepts `Cow<'static, str>` so
+//     // it will be cheap copy if user supplies as with static string ahead of time
+//     Only(Cow<'static, str>),
+// }
+//
+// impl AccessControlAllowOrigin {
+//     #[inline(always)]
+//     pub(crate) const fn is_any(&self) -> bool {
+//         matches!(self, Self::Any)
+//     }
+//
+//     pub(crate) fn new(s: impl Into<Cow<'static, str>>) -> Result<Self, &'static str> {
+//         let s = s.into();
+//         match s.as_ref() {
+//             "*" => Ok(Self::Any),
+//             _ => super::validate_origin(&s).map(|_| Self::Only(s)),
+//         }
+//     }
+//
+//     #[inline(always)]
+//     //This will perform expensive copy only if user provided dynamic string
+//     pub(crate) fn get_cow(&self) -> Cow<'static, str> {
+//         match self {
+//             Self::Any => Cow::Borrowed("*"),
+//             Self::Only(origin) => origin.clone(),
+//         }
+//     }
+// }
 
 impl Cors {
     /// Create `Cors` fang using given `origin` as `Access-Control-Allow-Origin` header value.\
     /// (Both `"*"` and a specific origin are available)
     pub fn new(origin: impl Into<Cow<'static, str>>) -> Self {
         Self {
-            allow_origin: AccessControlAllowOrigin::new(origin)
+            allow_origin: CorsOriginValue::new(origin.into().as_ref())
                 .unwrap_or_else(|err| panic!("[Cors::new] {err}")),
             allow_credentials: false,
             allow_headers: None,
@@ -165,7 +206,7 @@ impl Cors {
     /// Creates `Cors` with any origin allowed
     pub const fn any() -> Self {
         Self {
-            allow_origin: AccessControlAllowOrigin::Any,
+            allow_origin: CorsOriginValue::Any,
             allow_credentials: false,
             allow_headers: None,
             expose_headers: None,

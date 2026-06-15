@@ -1,5 +1,5 @@
 mod basicauth;
-use core::{fmt::Display, option::Option::Some};
+use core::{fmt::{Display, write}, option::Option::Some};
 use std::fmt::Formatter;
 pub use basicauth::BasicAuth;
 
@@ -25,16 +25,6 @@ mod timeout;
 #[cfg(feature = "__rt_native__")]
 pub use timeout::Timeout;
 
-fn validate_origin(origin: &str) -> Result<(), &'static str> {
-    if origin.parse::<Uri>().is_ok() {
-        Ok(())
-    } else {
-        Err("Unable to parse Uri.")
-    }
-}
-
-// builtin.rs
-
 /* #660 will replace this with an original struct
    (providing almost the same interface as this
    using original implementations internally)
@@ -43,14 +33,16 @@ fn validate_origin(origin: &str) -> Result<(), &'static str> {
 // to skip most difficult things in parsing,
 // so we only have to handle HTTP-origin-specific rules
 // on the top of the generic `Uri`.
+#[derive(Clone, Debug)]
 struct Origin(Uri);
 
+#[derive(Debug)]
 enum OriginError {
     InvalidUri(InvalidUri),
-    InvalidScheme,
-    InvalidPathLength,
-    InvalidPartLength,
-    InvalidPort,
+    FaultyScheme,
+    FaultyUriLength,
+    FaultyUriPartLength,
+    FaultyPort,
     //...
 }
 
@@ -71,25 +63,23 @@ impl Origin {
         // Additional validation
         // Validate scheme is HTTP or HTTPS
         if let Some(scheme) = uri.scheme() && scheme != &Scheme::HTTP && scheme != &Scheme::HTTPS {
-            return Err(OriginError::InvalidScheme);
+            return Err(OriginError::FaultyScheme);
         }
 
         // Validate max path length
         if uri.path().chars().count() > u8::MAX as usize {
-            return Err(OriginError::InvalidPathLength)
+            return Err(OriginError::FaultyUriLength)
         }
 
         // Validate max part length
         if !uri.path().split('.').all(|part| part.chars().count() <= 63) {
-            return Err(OriginError::InvalidPartLength)
+            return Err(OriginError::FaultyUriPartLength)
         }
 
-        // // Make sure port isn't made out of letters, and doesn't exceed `u16::MAX`
-        // if let Some(port) = uri.port() {
-        //     if !port.as_str().chars().all(|c| c.is_numeric()) {
-        //         return Err(OriginError::InvalidPort)
-        //     }
-        // }
+        // Check if user intended to add a port to Origin, but it's parsed out by http::uri::Uri, return invalid port error
+        if let Some((_, rest)) = s.split_once(':') && rest.contains(':') && uri.port_u16().is_none() {
+            return Err(OriginError::FaultyPort)
+        }
 
         // TODO: Add more if necessary
 
@@ -158,5 +148,19 @@ impl Origin {
 impl Display for Origin {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+impl Display for OriginError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let output = match self {
+            OriginError::InvalidUri(_) => { "Invalid URI." }
+            OriginError::FaultyScheme => { "Please use HTTP or HTTPS as scheme." }
+            OriginError::FaultyUriLength => { "Uri length mustn't exceed 255 characters in total." }
+            OriginError::FaultyUriPartLength => { "Uri part length mustn't exceed 63 characters." }
+            OriginError::FaultyPort => { "Port number was expected." }
+        };
+
+        write!(f, "{}", output)
     }
 }
