@@ -1,4 +1,6 @@
 mod basicauth;
+use core::{fmt::Display, option::Option::Some};
+use std::fmt::Formatter;
 pub use basicauth::BasicAuth;
 
 mod cors;
@@ -68,10 +70,8 @@ impl Origin {
 
         // Additional validation
         // Validate scheme is HTTP or HTTPS
-        if let Some(scheme) = uri.scheme() {
-            if scheme != &Scheme::HTTP && scheme != &Scheme::HTTPS {
-                return Err(OriginError::InvalidScheme);
-            }
+        if let Some(scheme) = uri.scheme() && scheme != &Scheme::HTTP && scheme != &Scheme::HTTPS {
+            return Err(OriginError::InvalidScheme);
         }
 
         // Validate max path length
@@ -84,14 +84,12 @@ impl Origin {
             return Err(OriginError::InvalidPartLength)
         }
 
-        // Make sure port isn't made out of letters, and doesn't exceed `u16::MAX`
-        if let Some(port) = uri.port() {
-            if port.as_u16() > u16::MAX {
-                return Err(OriginError::InvalidPort)
-            } else if port.as_str() != "" {
-                return Err(OriginError::InvalidPort)
-            }
-        }
+        // // Make sure port isn't made out of letters, and doesn't exceed `u16::MAX`
+        // if let Some(port) = uri.port() {
+        //     if !port.as_str().chars().all(|c| c.is_numeric()) {
+        //         return Err(OriginError::InvalidPort)
+        //     }
+        // }
 
         // TODO: Add more if necessary
 
@@ -108,5 +106,57 @@ impl Origin {
         // #606 will remove such heuristic if-else and then
         // we just have to access `.scheme` field or something like that
     }
+
+    fn port(&self) -> Option<u16> {
+        self.0.port_u16()
+    }
+
+    fn host(&self) -> Option<&str> {
+        self.0.host()
+    }
+
+    fn subdomain(&self) -> Option<&str> {
+        if let Some(host) = self.0.host() {
+            let (subdomain, _) = host
+                .split_once('.')
+                .map_or((None, host), |(s, r)| (Some(s), r));
+
+            subdomain
+        } else {
+            None
+        }
+    }
+
+    fn domain(&self) -> Option<&str> {
+        if let Some(host) = self.0.host() {
+            let (_, domain) = host
+                .split_once('.')
+                .map_or((None, host), |(s, r)| (Some(s), r));
+
+            Some(domain)
+        } else {
+            None
+        }
+    }
+
+    fn host_as_tuple(&self) -> (Option<&str>, &str) {
+        if let Some(host) = self.0.host() {
+            let (subdomain, domain) = host
+                .split_once('.')
+                .map_or((None, host), |(s, d)| (Some(s), d));
+
+            (subdomain, domain)
+        } else {
+            (None, "")
+        }
+
+    }
+
     // and more... (as needed)
+}
+
+impl Display for Origin {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }

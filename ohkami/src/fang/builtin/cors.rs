@@ -1,5 +1,5 @@
 use crate::{Fang, FangProc, Request, Response, Status, header::append};
-use core::todo;
+use core::option::Option::Some;
 use std::borrow::Cow;
 
 use super::OriginError;
@@ -20,14 +20,15 @@ enum CorsOriginError {
 impl CorsOrigin {
     /// Parse string based on the Cors origin string syntax.
     fn new(s: &str) -> Result<Self, CorsOriginError> {
-        let mut s = Cow::Borrowed(s);
         let mut any_port = false;
         let mut any_subdomain = false;
-
-        if let Some(rest) = s.strip_suffix(":*") {
-            any_port = true;
-            s = Cow::Borrowed(rest);
-        }
+        let mut s = match s.strip_suffix(":*") {
+            Some(rest) => {
+                any_port = true;
+                Cow::Borrowed(rest)
+            }
+            None => Cow::Borrowed(s)
+        };
 
         if let Some((scheme @ ("http://" | "https://"), rest)) = s.split_once("*.") {
             any_subdomain = true;
@@ -43,14 +44,43 @@ impl CorsOrigin {
     }
 
     fn matches_str(&self, incoming_origin: &str) -> bool {
-        todo!("Write logic");
-        false
+        if let Some(("http://" | "https://", origin)) = incoming_origin.split_once("://") {
+            let (host, port) = origin
+                .split_once(':')
+                .map_or((origin, None), |(h, p)| (h, Some(p)));
+
+            // Check port if not wildcard, validate
+            if !self.any_port
+                && let Some(cors_port) = self.base_origin.port()
+                && Some(format!("{}", cors_port).as_str()) != port {
+
+                return false;
+            }
+
+            let (cors_subdomain, cors_domain) = self.base_origin.host_as_tuple();
+            let (subdomain, domain) = host
+                .split_once('.')
+                .map_or((None, origin), |(s, d)| (Some(s), d));
+
+            // If subdomain is not a wildcard, validate
+            if !self.any_subdomain && cors_subdomain != subdomain {
+                return false;
+            }
+
+            // Check if domain matches.
+            if domain != cors_domain {
+                return false;
+            }
+
+            true
+        } else {
+            // No scheme was somehow found
+            false
+        }
     }
 
     fn matches(&self, incoming_origin: &super::Origin) -> bool {
-        todo!("Write logic");
-        true
-        //...
+        self.matches_str(incoming_origin.to_string().as_str())
     }
 }
 
@@ -197,17 +227,14 @@ impl Cors {
             let (host, port) = rest
                 .split_once(':')
                 .map_or((rest, None), |(h, p)| (h, Some(p)));
+
             //If no port wildcard in Cors, enforce similarity
-            if allow_port.is_some_and(|p| p != "*") {
-                if port != allow_port {
-                    return allow_origin;
-                }
+            if allow_port.is_some_and(|p| p != "*") && port != allow_port {
+                return allow_origin;
             }
 
-            if !allow_host.starts_with("*.") {
-                if host != allow_host {
-                    return allow_origin;
-                }
+            if !allow_host.starts_with("*.") && host != allow_host {
+                return allow_origin;
             }
 
             //Port must be in range of u16, and must be either * or a string of numbers.
@@ -301,7 +328,7 @@ impl<Inner: FangProc> FangProc for CorsProc<Inner> {
     async fn bite<'b>(&'b self, req: &'b mut Request) -> Response {
         let mut res = self.inner.bite(req).await;
         let allow_origin = Cors::verify_origin(
-            req.headers.origin().unwrap_or_else(|| ""),
+            req.headers.origin().unwrap_or(""),
             self.cors.allow_origin.get_cow(),
         )
         .into_owned();
