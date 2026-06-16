@@ -43,6 +43,7 @@ pub enum OriginError {
     FaultyUriLength,
     FaultyUriPartLength,
     FaultyPort,
+    FaultyIp,
     //...
 }
 
@@ -72,9 +73,15 @@ impl Origin {
                 return Err(OriginError::FaultyUriLength)
             }
 
+            let split_host: Vec<&str> = host.split('.').collect();
+
             // Validate max part length
-            if !host.split('.').all(|part| part.chars().count() <= 63) {
+            if !split_host.iter().all(|part| part.chars().count() <= 63) {
                 return Err(OriginError::FaultyUriPartLength)
+            }
+
+            if split_host.len() < 4 && host.chars().all(|c| c.is_numeric() || c == '.') {
+                return Err(OriginError::FaultyIp)
             }
         }
 
@@ -142,6 +149,7 @@ impl Display for OriginError {
             OriginError::FaultyUriLength => { "URI length mustn't exceed 255 characters in total." }
             OriginError::FaultyUriPartLength => { "URI part length mustn't exceed 63 characters." }
             OriginError::FaultyPort => { "Port number was expected." }
+            OriginError::FaultyIp => { "Ip was misformatted." }
         };
 
         write!(f, "{}", output)

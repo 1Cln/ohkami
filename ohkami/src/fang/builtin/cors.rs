@@ -344,7 +344,7 @@ impl<Inner: FangProc> FangProc for CorsProc<Inner> {
 #[cfg(test)]
 mod test {
     #[test]
-    fn cors_accept_regular_ip() {
+    fn cors_accept_regular_origin_ip() {
         assert_eq!(
             "https://192.168.1.41:5173",
             super::Cors::verify_origin(
@@ -355,7 +355,7 @@ mod test {
     }
 
     #[test]
-    fn cors_accept_regular_domain() {
+    fn cors_accept_regular_origin_domain() {
         assert_eq!(
             "https://example.com",
             super::Cors::verify_origin(
@@ -373,7 +373,7 @@ mod test {
     }
 
     #[test]
-    fn cors_accept_localhost() {
+    fn cors_accept_origin_localhost() {
         assert_eq!(
             "https://localhost:5173/",
             super::Cors::verify_origin(
@@ -391,7 +391,7 @@ mod test {
     }
 
     #[test]
-    fn cors_accept_wildcard_in_ip_port() {
+    fn cors_accept_wildcard_match_in_own_ip_port() {
         assert_eq!(
             "https://192.168.1.2:5173",
             super::Cors::verify_origin(
@@ -402,7 +402,7 @@ mod test {
     }
 
     #[test]
-    fn cors_accept_wildcard_in_port() {
+    fn cors_accept_wildcard_match_in_own_port() {
         assert_eq!(
             "https://example.com:5173",
             super::Cors::verify_origin(
@@ -413,7 +413,7 @@ mod test {
     }
 
     #[test]
-    fn cors_accept_wildcard_in_subdomain() {
+    fn cors_accept_wildcard_match_in_own_subdomain() {
         assert_eq!(
             "https://test.example.com",
             super::Cors::verify_origin(
@@ -424,7 +424,18 @@ mod test {
     }
 
     #[test]
-    fn cors_deny_wildcard_in_ip_subdomain() {
+    fn cors_deny_wildcard_in_origin_ip_subdomain() {
+        assert_eq!(
+            "https://192.168.1.15:8080/",
+            super::Cors::verify_origin(
+                "https://*.168.1.15:8080",
+                &super::CorsOriginValue::new("https://192.168.1.15:8080").unwrap()
+            )
+        )
+    }
+
+    #[test]
+    fn cors_deny_faulty_wildcard_in_origin_ip() {
         assert_eq!(
             "https://192.168.1.15:8080/",
             super::Cors::verify_origin(
@@ -435,7 +446,18 @@ mod test {
     }
 
     #[test]
-    fn cors_deny_wildcard_in_sld() {
+    fn cors_deny_faulty_wildcard_in_origin_ip_subdomain() {
+        assert_eq!(
+            "https://192.168.1.15:8080/",
+            super::Cors::verify_origin(
+                "https://*.168.1.15:8080",
+                &super::CorsOriginValue::new("https://192.168.1.15:8080").unwrap()
+            )
+        )
+    }
+
+    #[test]
+    fn cors_deny_wildcard_in_origin_sld() {
         assert_eq!(
             "https://test.example.com:8080/",
             super::Cors::verify_origin(
@@ -446,7 +468,7 @@ mod test {
     }
 
     #[test]
-    fn cors_deny_wildcard_in_extension() {
+    fn cors_deny_wildcard_in_origin_extension() {
         assert_eq!(
             "https://test.example.com:8080/",
             super::Cors::verify_origin(
@@ -457,7 +479,7 @@ mod test {
     }
 
     #[test]
-    fn cors_deny_invalid_ip() {
+    fn cors_deny_invalid_origin_ip() {
         assert_eq!(
             "https://192.168.1.58:8080/",
             super::Cors::verify_origin(
@@ -468,7 +490,7 @@ mod test {
     }
 
     #[test]
-    fn cors_deny_invalid_ip_port_range() {
+    fn cors_deny_invalid_origin_ip_port_range() {
         assert_eq!(
             "https://192.168.1.0:8080/",
             super::Cors::verify_origin(
@@ -526,6 +548,14 @@ mod test {
     )]
     fn cors_port_invalidation() {
         let _: super::Cors = super::Cors::new("http://example.com:abcd");
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "[Cors::new] Ip was misformatted."
+    )]
+    fn cors_ip_subdomain_wildcard_invalidation() {
+        let _: super::Cors = super::Cors::new("https://*.168.1.0:8080");
     }
 
     #[test]
