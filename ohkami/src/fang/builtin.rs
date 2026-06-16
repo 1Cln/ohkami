@@ -66,14 +66,16 @@ impl Origin {
             return Err(OriginError::FaultyScheme);
         }
 
-        // Validate max path length
-        if uri.path().chars().count() > u8::MAX as usize {
-            return Err(OriginError::FaultyUriLength)
-        }
+        if let Some(host) = uri.host() {
+            // Validate max host length
+            if host.chars().count() > u8::MAX as usize {
+                return Err(OriginError::FaultyUriLength)
+            }
 
-        // Validate max part length
-        if !uri.path().split('.').all(|part| part.chars().count() <= 63) {
-            return Err(OriginError::FaultyUriPartLength)
+            // Validate max part length
+            if !host.split('.').all(|part| part.chars().count() <= 63) {
+                return Err(OriginError::FaultyUriPartLength)
+            }
         }
 
         // Check if user intended to add a port to Origin, but it's parsed out by http::uri::Uri, return invalid port error
@@ -134,8 +136,8 @@ impl Display for OriginError {
         let output = match self {
             OriginError::InvalidUri(_) => { "Invalid URI." }
             OriginError::FaultyScheme => { "Please use HTTP or HTTPS as scheme." }
-            OriginError::FaultyUriLength => { "Uri length mustn't exceed 255 characters in total." }
-            OriginError::FaultyUriPartLength => { "Uri part length mustn't exceed 63 characters." }
+            OriginError::FaultyUriLength => { "URI length mustn't exceed 255 characters in total." }
+            OriginError::FaultyUriPartLength => { "URI part length mustn't exceed 63 characters." }
             OriginError::FaultyPort => { "Port number was expected." }
         };
 

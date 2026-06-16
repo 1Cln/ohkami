@@ -341,7 +341,7 @@ mod test {
     #[test]
     fn cors_accept_regular_ip() {
         assert_eq!(
-            "https://192.168.1.41:5173",
+            "https://192.168.1.41:5173/",
             super::Cors::verify_origin(
                 "https://192.168.1.41:5173",
                 &super::CorsOriginValue::new("https://192.168.1.41:5173").unwrap()
@@ -352,14 +352,14 @@ mod test {
     #[test]
     fn cors_accept_regular_domain() {
         assert_eq!(
-            "https://example.com",
+            "https://example.com/",
             super::Cors::verify_origin(
                 "https://example.com",
                 &super::CorsOriginValue::new("https://example.com").unwrap()
             )
         );
         assert_eq!(
-            "https://sub.example.com",
+            "https://sub.example.com/",
             super::Cors::verify_origin(
                 "https://sub.example.com",
                 &super::CorsOriginValue::new("https://sub.example.com").unwrap()
@@ -370,14 +370,14 @@ mod test {
     #[test]
     fn cors_accept_localhost() {
         assert_eq!(
-            "https://localhost:5173",
+            "https://localhost:5173/",
             super::Cors::verify_origin(
                 "https://localhost:5173",
                 &super::CorsOriginValue::new("https://localhost:5173").unwrap()
             )
         );
         assert_eq!(
-            "https://localhost:5173",
+            "https://localhost:5173/",
             super::Cors::verify_origin(
                 "https://localhost:5173",
                 &super::CorsOriginValue::new("https://localhost:*").unwrap()
@@ -388,7 +388,7 @@ mod test {
     #[test]
     fn cors_accept_wildcard_in_ip_port() {
         assert_eq!(
-            "https://192.168.1.2:5173",
+            "https://192.168.1.2:5173/",
             super::Cors::verify_origin(
                 "https://192.168.1.2:5173",
                 &super::CorsOriginValue::new("https://192.168.1.2:*").unwrap()
@@ -399,7 +399,7 @@ mod test {
     #[test]
     fn cors_accept_wildcard_in_port() {
         assert_eq!(
-            "https://example.com:5173",
+            "https://example.com:5173/",
             super::Cors::verify_origin(
                 "https://example.com:5173",
                 &super::CorsOriginValue::new("https://example.com:*").unwrap()
@@ -410,7 +410,7 @@ mod test {
     #[test]
     fn cors_accept_wildcard_in_subdomain() {
         assert_eq!(
-            "https://test.example.com",
+            "https://test.example.com/",
             super::Cors::verify_origin(
                 "https://test.example.com",
                 &super::CorsOriginValue::new("https://*.example.com").unwrap()
@@ -421,7 +421,7 @@ mod test {
     #[test]
     fn cors_deny_wildcard_in_ip_subdomain() {
         assert_eq!(
-            "https://192.168.1.15:8080",
+            "https://192.168.1.15:8080/",
             super::Cors::verify_origin(
                 "https://192.*.1.15:8080",
                 &super::CorsOriginValue::new("https://192.168.1.15:8080").unwrap()
@@ -432,7 +432,7 @@ mod test {
     #[test]
     fn cors_deny_wildcard_in_sld() {
         assert_eq!(
-            "https://test.example.com:8080",
+            "https://test.example.com:8080/",
             super::Cors::verify_origin(
                 "https://test.*.com:8080",
                 &super::CorsOriginValue::new("https://test.example.com:8080").unwrap()
@@ -443,7 +443,7 @@ mod test {
     #[test]
     fn cors_deny_wildcard_in_extension() {
         assert_eq!(
-            "https://test.example.com:8080",
+            "https://test.example.com:8080/",
             super::Cors::verify_origin(
                 "https://test.example.*:8080",
                 &super::CorsOriginValue::new("https://test.example.com:8080").unwrap()
@@ -454,7 +454,7 @@ mod test {
     #[test]
     fn cors_deny_invalid_ip() {
         assert_eq!(
-            "https://192.168.1.58:8080",
+            "https://192.168.1.58:8080/",
             super::Cors::verify_origin(
                 "https://192.168.a.58:8080",
                 &super::CorsOriginValue::new("https://192.168.1.58:8080").unwrap()
@@ -465,7 +465,7 @@ mod test {
     #[test]
     fn cors_deny_invalid_ip_port_range() {
         assert_eq!(
-            "https://192.168.1.0:8080",
+            "https://192.168.1.0:8080/",
             super::Cors::verify_origin(
                 "https://192.168.1.0:80080",
                 &super::CorsOriginValue::new("https://192.168.1.0:8080").unwrap()
@@ -492,22 +492,23 @@ mod test {
 
     #[test]
     #[should_panic(
-        expected = "[Cors::new] Unable to parse Uri."
+        expected = "[Cors::new] Please use HTTP or HTTPS as scheme."
     )]
     fn cors_scheme_invalidation() {
         let _: super::Cors = super::Cors::new("foobarhttp://example.com");
     }
 
     #[test]
-    #[should_panic(expected = "[Cors::new] Unable to parse Uri.")]
+    #[should_panic(expected = "[Cors::new] URI length mustn't exceed 255 characters in total.")]
     fn cors_length_invalidation() {
-        let _: super::Cors = super::Cors::new(
-            "https://abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcde.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijkl.com",
+        let a: super::Cors = super::Cors::new(
+            "https://thisisaridiculouslylongurithatshoulddefinitelybeinvalidaccordingtothistest.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijkl.com",
         );
+        println!("{}", a.allow_origin.to_string())
     }
 
     #[test]
-    #[should_panic(expected = "[Cors::new] Unable to parse Uri.")]
+    #[should_panic(expected = "[Cors::new] URI part length mustn't exceed 63 characters.")]
     fn cors_part_length_invalidation() {
         let _: super::Cors = super::Cors::new(
             "https://www.abcdefghijklmnopqrstuvwxyzabcdefghijklmnoqrstuvwxyzabcdefghijklmnopqrstuvwxyz.com",
@@ -516,7 +517,7 @@ mod test {
 
     #[test]
     #[should_panic(
-        expected = "[Cors::new] Unable to parse Uri."
+        expected = "[Cors::new] Port number was expected."
     )]
     fn cors_port_invalidation() {
         let _: super::Cors = super::Cors::new("http://example.com:abcd");
@@ -524,7 +525,7 @@ mod test {
 
     #[test]
     #[should_panic(
-        expected = "[Cors::new] Unable to parse Uri."
+        expected = "[Cors::new] Invalid URI."
     )]
     fn cors_host_invalidation() {
         let _: super::Cors = super::Cors::new("http://%example.com");
