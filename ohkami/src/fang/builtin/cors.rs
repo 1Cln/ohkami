@@ -78,32 +78,33 @@ impl CorsOriginValue {
                     if !cors_origin.any_port
                         && let Some(cors_port) = cors_origin.base_origin.port()
                         && Some(format!("{}", cors_port).as_str()) != port {
-
-                        println!("No exact port match");
                         return false;
                     }
 
                     let (cors_subdomain, cors_domain) = cors_origin.base_origin.host_as_subdomain_and_domain();
                     let (subdomain, domain) = host
                         .split_once('.')
-                        .map_or((None, host), |(s, d)| (Some(s), d));
+                        .map_or((None, host), |(s, d)| {
+                            if d.contains('.') {
+                                (Some(s), d)
+                            } else {
+                                (None, host)
+                            }
+                        });
 
                     // If subdomain is not a wildcard, validate
                     if !cors_origin.any_subdomain && cors_subdomain != subdomain {
-                        println!("No exact subdomain match");
                         return false;
                     }
 
                     // Check if domain matches.
                     if domain != cors_domain {
-                        println!("No exact domain match {domain}, {cors_domain}");
                         return false;
                     }
                     // Subdomain, domain and port match, so return true.
                     true
                 } else {
                     // No scheme was somehow found
-                    println!("No scheme found");
                     false
                 }
             }
@@ -272,10 +273,8 @@ impl Cors {
     }
     pub fn verify_origin<'a>(origin: &'a str, cors_origin: &CorsOriginValue) -> Cow<'a, str> {
         if CorsOriginValue::matches_str(cors_origin, origin) {
-            println!("{origin} matches {cors_origin}");
             Cow::Borrowed(origin)
         } else {
-            println!("{origin} didn't match {cors_origin}");
             Cow::Owned(cors_origin.to_string())
         }
     }

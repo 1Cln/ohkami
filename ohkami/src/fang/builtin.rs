@@ -111,11 +111,14 @@ impl Origin {
 
     fn host_as_subdomain_and_domain(&self) -> (Option<&str>, &str) {
         if let Some(host) = self.0.host() {
-            let (subdomain, domain) = host
-                .split_once('.')
-                .map_or((None, host), |(s, d)| (Some(s), d));
-
-            (subdomain, domain)
+            host.split_once('.')
+                .map_or((None, host), |(subdomain, domain)| {
+                    if domain.contains('.') {
+                        (Some(subdomain), domain)
+                    } else {
+                        (None, host)
+                    }
+                })
         } else {
             (None, "")
         }
