@@ -1,5 +1,5 @@
 mod basicauth;
-use core::{fmt::{Display, write}, option::Option::Some};
+use core::{fmt::Display, option::Option::Some};
 use std::fmt::Formatter;
 pub use basicauth::BasicAuth;
 
@@ -34,10 +34,10 @@ pub use timeout::Timeout;
 // so we only have to handle HTTP-origin-specific rules
 // on the top of the generic `Uri`.
 #[derive(Clone, Debug)]
-struct Origin(Uri);
+pub struct Origin(Uri);
 
 #[derive(Debug)]
-enum OriginError {
+pub enum OriginError {
     InvalidUri(InvalidUri),
     FaultyScheme,
     FaultyUriLength,
@@ -46,7 +46,7 @@ enum OriginError {
     //...
 }
 
-enum Scheme {
+pub enum Scheme {
     Http,
     Https
 }
@@ -87,6 +87,7 @@ impl Origin {
     }
 
     // Accessor methods for origin components; for example:
+    #[allow(unused)]
     fn scheme(&self) -> Scheme {
         if self.0.scheme() == Some(&http::uri::Scheme::HTTP) {
             Scheme::Http
@@ -101,35 +102,12 @@ impl Origin {
         self.0.port_u16()
     }
 
+    #[allow(unused)]
     fn host(&self) -> Option<&str> {
         self.0.host()
     }
 
-    fn subdomain(&self) -> Option<&str> {
-        if let Some(host) = self.0.host() {
-            let (subdomain, _) = host
-                .split_once('.')
-                .map_or((None, host), |(s, r)| (Some(s), r));
-
-            subdomain
-        } else {
-            None
-        }
-    }
-
-    fn domain(&self) -> Option<&str> {
-        if let Some(host) = self.0.host() {
-            let (_, domain) = host
-                .split_once('.')
-                .map_or((None, host), |(s, r)| (Some(s), r));
-
-            Some(domain)
-        } else {
-            None
-        }
-    }
-
-    fn host_as_tuple(&self) -> (Option<&str>, &str) {
+    fn host_as_subdomain_and_domain(&self) -> (Option<&str>, &str) {
         if let Some(host) = self.0.host() {
             let (subdomain, domain) = host
                 .split_once('.')
