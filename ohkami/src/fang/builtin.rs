@@ -1,6 +1,5 @@
 mod basicauth;
-use core::{fmt::Display, option::Option::Some};
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 pub use basicauth::BasicAuth;
 
 mod cors;
@@ -18,8 +17,6 @@ pub use context::Context;
 pub mod enamel;
 pub use enamel::Enamel;
 
-use http::uri::{InvalidUri, Uri};
-
 #[cfg(feature = "__rt_native__")]
 mod timeout;
 #[cfg(feature = "__rt_native__")]
@@ -31,11 +28,11 @@ pub use timeout::Timeout;
 // Just wrapping `https::uri::Uri` for now to skip most difficult things in parsing,
 // so we only have to handle HTTP-origin-specific rules on the top of the generic `Uri`.
 #[derive(Clone, Debug)]
-pub struct Origin(Uri);
+pub struct Origin(http::uri::Uri);
 
 #[derive(Debug)]
 pub enum OriginError {
-    InvalidUri(InvalidUri),
+    InvalidUri(http::uri::InvalidUri),
     FaultyScheme,
     FaultyUriLength,
     FaultyUriPartLength,
@@ -51,11 +48,6 @@ pub enum Scheme {
 
 impl Origin {
     /// Parse string into HTTP origin.
-    ///
-    /// # Arguments
-    /// * `s`: &str - The string that represents the URI that should be added to the Origin struct.
-    ///
-    /// returns: Self (Origin)
     ///
     /// # Examples
     /// ```rust

@@ -1,10 +1,7 @@
 use crate::{Fang, FangProc, Request, Response, Status, header::append};
 use std::borrow::Cow;
-use std::fmt::{Display, Formatter};
 use super::OriginError;
 
-// cors.rs
-/* This replaces current `AccessControlAllowOrigin` */
 #[derive(Clone, Debug)]
 pub enum CorsOriginValue {
     CorsOrigin(CorsOrigin),
@@ -18,8 +15,8 @@ pub struct CorsOrigin {
     any_subdomain: bool,
 }
 
-impl Display for CorsOrigin {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Display for CorsOrigin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.base_origin)
     }
 }
@@ -29,8 +26,8 @@ pub enum CorsOriginError {
     InvalidOrigin(OriginError)
 }
 
-impl Display for CorsOriginError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Display for CorsOriginError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let CorsOriginError::InvalidOrigin(e) = self;
         write!(f, "{}", e)
     }
@@ -47,7 +44,7 @@ impl CorsOriginValue {
     /// # Examples
     /// ```rust
     /// fn run() {
-    ///     CorsOriginValue::new("https://localhost:3000").unwrap(); //Gives CorsOriginValue::Any
+    ///     CorsOriginValue::new("https://localhost:3000").unwrap(); //Gives CorsOriginValue::CorsOrigin
     ///     CorsOriginValue::new("*").unwrap(); //Gives CorsOriginValue::Any
     /// }
     /// ```
@@ -84,14 +81,7 @@ impl CorsOriginValue {
 
     /// Checks if according to the noted rules for wildcards in this struct, the incoming origin would match.
     ///
-    /// # Arguments
-    ///
-    /// * `incoming_origin`: &str - The origin URI that the stored Cors needs to be compared to.
-    ///
-    /// returns: bool
-    ///
     /// # Examples
-    ///
     /// ```
     /// fn run() {
     ///     let cors = CorsOriginValue::new("*").unwrap();
@@ -149,14 +139,7 @@ impl CorsOriginValue {
 
     /// Checks if according to the noted rules for wildcards in this struct, the incoming origin would match.
     ///
-    /// # Arguments
-    ///
-    /// * `incoming_origin`: Origin - The origin that the stored Cors needs to be compared to.
-    ///
-    /// returns: bool
-    ///
     /// # Examples
-    ///
     /// ```
     /// fn run() {
     ///     let cors = CorsOriginValue::new("*").unwrap();
@@ -179,8 +162,8 @@ impl CorsOriginValue {
 
 }
 
-impl Display for CorsOriginValue {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Display for CorsOriginValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             CorsOriginValue::CorsOrigin(origin) => {
                 write!(f, "{}", origin)
