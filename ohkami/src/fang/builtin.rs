@@ -26,13 +26,10 @@ mod timeout;
 pub use timeout::Timeout;
 
 /* #660 will replace this with an original struct
-   (providing almost the same interface as this
-   using original implementations internally)
+   (providing almost the same interface as this using original implementations internally)
 */
-// Just wrapping `https::uri::Uri` for now
-// to skip most difficult things in parsing,
-// so we only have to handle HTTP-origin-specific rules
-// on the top of the generic `Uri`.
+// Just wrapping `https::uri::Uri` for now to skip most difficult things in parsing,
+// so we only have to handle HTTP-origin-specific rules on the top of the generic `Uri`.
 #[derive(Clone, Debug)]
 pub struct Origin(Uri);
 
@@ -53,8 +50,31 @@ pub enum Scheme {
 }
 
 impl Origin {
-    /* This replaces current `fn validate_origin` entirely */
-    /// Parse string into HTTP origin
+    /// Parse string into HTTP origin.
+    ///
+    /// # Arguments
+    /// * `s`: &str - The string that represents the URI that should be added to the Origin struct.
+    ///
+    /// returns: Self (Origin)
+    ///
+    /// # Examples
+    /// ```rust
+    /// fn run() {
+    ///     Origin::new("https://localhost:3000").unwrap();
+    /// }
+    /// ```
+    /// # Errors
+    ///
+    /// This function will return an error if the given URI string fails the validation included in this function.
+    /// Rules include:
+    ///
+    /// - Generalistic http::uri::Uri rules for URI's.
+    /// - Scheme must be either HTTP or HTTPS.
+    /// - URI length mustn't exceed 255 characters in total.
+    /// - URI parts mustn't exceed 63 characters per.
+    /// - Ports must be numeric.
+    /// - IP strings like 192.168.1.0 cannot have wildcards.
+    ///
     fn new(s: &str) -> Result<Self, OriginError> {
         use http::uri::{Uri, Scheme};
 
@@ -90,12 +110,10 @@ impl Origin {
             return Err(OriginError::FaultyPort)
         }
 
-        // TODO: Add more if necessary
-
         Ok(Self(uri))
     }
 
-    // Accessor methods for origin components; for example:
+    /// Returns the scheme of this [`Origin`].
     #[allow(unused)]
     fn scheme(&self) -> Scheme {
         if self.0.scheme() == Some(&http::uri::Scheme::HTTP) {
@@ -107,15 +125,18 @@ impl Origin {
         // we just have to access `.scheme` field or something like that
     }
 
+    /// Returns the port of this [`Origin`].
     fn port(&self) -> Option<u16> {
         self.0.port_u16()
     }
 
+    /// Returns the host of this [`Origin`].
     #[allow(unused)]
     fn host(&self) -> Option<&str> {
         self.0.host()
     }
 
+    /// Returns the host as subdomain and domain of this [`Origin`] in a tuple struct like (subdomain: Option<&str>, domain: &str).
     fn host_as_subdomain_and_domain(&self) -> (Option<&str>, &str) {
         if let Some(host) = self.0.host() {
             host.split_once('.')
@@ -131,8 +152,6 @@ impl Origin {
         }
 
     }
-
-    // and more... (as needed)
 }
 
 impl Display for Origin {

@@ -38,6 +38,22 @@ impl Display for CorsOriginError {
 
 impl CorsOriginValue {
     /// Parse string based on the Cors origin string syntax.
+    ///
+    /// # Arguments
+    /// * `s`: &str - The string that represents the URI that should be added to the Cors.
+    ///
+    /// returns: Self (CorsOriginValue)
+    ///
+    /// # Examples
+    /// ```rust
+    /// fn run() {
+    ///     CorsOriginValue::new("https://localhost:3000").unwrap(); //Gives CorsOriginValue::Any
+    ///     CorsOriginValue::new("*").unwrap(); //Gives CorsOriginValue::Any
+    /// }
+    /// ```
+    /// # Errors
+    /// This function will return an error if the given URI string fails the validation included in [`Origin`].
+    ///
     fn new(s: &str) -> Result<Self, CorsOriginError> {
         if s == "*" {
             return Ok(Self::Any);
@@ -66,6 +82,22 @@ impl CorsOriginValue {
         Ok(Self::CorsOrigin(CorsOrigin { base_origin, any_port, any_subdomain }) )
     }
 
+    /// Checks if according to the noted rules for wildcards in this struct, the incoming origin would match.
+    ///
+    /// # Arguments
+    ///
+    /// * `incoming_origin`: &str - The origin URI that the stored Cors needs to be compared to.
+    ///
+    /// returns: bool
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// fn run() {
+    ///     let cors = CorsOriginValue::new("*").unwrap();
+    ///     assert_eq!(true, cors.matches_str("localhost:5173")); // true
+    /// }
+    /// ```
     fn matches_str(&self, incoming_origin: &str) -> bool {
         match self {
             CorsOriginValue::CorsOrigin(cors_origin) => {
@@ -115,6 +147,23 @@ impl CorsOriginValue {
         }
     }
 
+    /// Checks if according to the noted rules for wildcards in this struct, the incoming origin would match.
+    ///
+    /// # Arguments
+    ///
+    /// * `incoming_origin`: Origin - The origin that the stored Cors needs to be compared to.
+    ///
+    /// returns: bool
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// fn run() {
+    ///     let cors = CorsOriginValue::new("*").unwrap();
+    ///     let origin = Origin::new("https://localhost:5173").unwrap();
+    ///     assert_eq!(true, cors.matches(origin)); // true
+    /// }
+    /// ```
     #[allow(unused)]
     fn matches(&self, incoming_origin: &super::Origin) -> bool {
         if self.is_any() {
@@ -123,18 +172,11 @@ impl CorsOriginValue {
         self.matches_str(incoming_origin.to_string().as_str())
     }
 
+    /// Returns if this [`CorsOriginValue`] is [`CorsOriginValue::Any`].
     fn is_any(&self) -> bool {
         matches!(self, Self::Any)
     }
 
-    //     #[inline(always)]
-    //     //This will perform expensive copy only if user provided dynamic string
-    //     pub(crate) fn get_cow(&self) -> Cow<'static, str> {
-    //         match self {
-    //             Self::Any => Cow::Borrowed("*"),
-    //             Self::Only(origin) => origin.clone(),
-    //         }
-    //     }
 }
 
 impl Display for CorsOriginValue {
@@ -180,38 +222,6 @@ pub struct Cors {
     pub(crate) expose_headers: Option<String>,
     pub(crate) max_age: Option<u32>,
 }
-
-// #[derive(Clone, Debug)]
-// pub(crate) enum AccessControlAllowOrigin {
-//     Any,
-//     // `.access_control_allow_origin(...)` in the [`bite` impl](CorsProc::bite) requires accepts `Cow<'static, str>` so
-//     // it will be cheap copy if user supplies as with static string ahead of time
-//     Only(Cow<'static, str>),
-// }
-//
-// impl AccessControlAllowOrigin {
-//     #[inline(always)]
-//     pub(crate) const fn is_any(&self) -> bool {
-//         matches!(self, Self::Any)
-//     }
-//
-//     pub(crate) fn new(s: impl Into<Cow<'static, str>>) -> Result<Self, &'static str> {
-//         let s = s.into();
-//         match s.as_ref() {
-//             "*" => Ok(Self::Any),
-//             _ => super::validate_origin(&s).map(|_| Self::Only(s)),
-//         }
-//     }
-//
-//     #[inline(always)]
-//     //This will perform expensive copy only if user provided dynamic string
-//     pub(crate) fn get_cow(&self) -> Cow<'static, str> {
-//         match self {
-//             Self::Any => Cow::Borrowed("*"),
-//             Self::Only(origin) => origin.clone(),
-//         }
-//     }
-// }
 
 impl Cors {
     /// Create `Cors` fang using given `origin` as `Access-Control-Allow-Origin` header value.\
@@ -528,10 +538,9 @@ mod test {
     #[test]
     #[should_panic(expected = "[Cors::new] URI length mustn't exceed 255 characters in total.")]
     fn cors_length_invalidation() {
-        let a: super::Cors = super::Cors::new(
+        let _: super::Cors = super::Cors::new(
             "https://thisisaridiculouslylongurithatshoulddefinitelybeinvalidaccordingtothistest.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijkl.com",
         );
-        println!("{}", a.allow_origin.to_string())
     }
 
     #[test]
