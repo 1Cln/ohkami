@@ -506,43 +506,33 @@ mod test {
     }
 
     #[test]
-    #[should_panic(
-        expected = "[Cors::new] Please use HTTP or HTTPS as scheme."
-    )]
     fn cors_scheme_invalidation() {
-        let _: super::Cors = super::Cors::new("foobarhttp://example.com");
+        let origin = "foobarhttp://example.com";
+        assert_eq!(super::CorsOriginError::InvalidOrigin(super::OriginError::FaultyScheme).to_string(), super::CorsOriginValue::new(origin).unwrap_err().to_string())
     }
 
     #[test]
-    #[should_panic(expected = "[Cors::new] URI length mustn't exceed 255 characters in total.")]
     fn cors_length_invalidation() {
-        let _: super::Cors = super::Cors::new(
-            "https://thisisaridiculouslylongurithatshoulddefinitelybeinvalidaccordingtothistest.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijkl.com",
-        );
+        let origin = "https://thisisaridiculouslylongurithatshoulddefinitelybeinvalidaccordingtothistest.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijkl.com";
+        assert_eq!(super::CorsOriginError::InvalidOrigin(super::OriginError::FaultyUriLength).to_string(), super::CorsOriginValue::new(origin).unwrap_err().to_string())
     }
 
     #[test]
-    #[should_panic(expected = "[Cors::new] URI part length mustn't exceed 63 characters.")]
     fn cors_part_length_invalidation() {
-        let _: super::Cors = super::Cors::new(
-            "https://www.abcdefghijklmnopqrstuvwxyzabcdefghijklmnoqrstuvwxyzabcdefghijklmnopqrstuvwxyz.com",
-        );
+        let origin = "https://www.abcdefghijklmnopqrstuvwxyzabcdefghijklmnoqrstuvwxyzabcdefghijklmnopqrstuvwxyz.com";
+        assert_eq!(super::CorsOriginError::InvalidOrigin(super::OriginError::FaultyUriPartLength).to_string(), super::CorsOriginValue::new(origin).unwrap_err().to_string())
     }
 
     #[test]
-    #[should_panic(
-        expected = "[Cors::new] Port number was expected."
-    )]
     fn cors_port_invalidation() {
-        let _: super::Cors = super::Cors::new("http://example.com:abcd");
+        let origin = "http://example.com:abcd";
+        assert_eq!(super::CorsOriginError::InvalidOrigin(super::OriginError::FaultyPort).to_string(), super::CorsOriginValue::new(origin).unwrap_err().to_string())
     }
 
     #[test]
-    #[should_panic(
-        expected = "[Cors::new] Ip was misformatted."
-    )]
     fn cors_ip_subdomain_wildcard_invalidation() {
-        let _: super::Cors = super::Cors::new("https://*.168.1.0:8080");
+        let origin = "https://*.168.1.0:8080";
+        assert_eq!(super::CorsOriginError::InvalidOrigin(super::OriginError::FaultyIp).to_string(), super::CorsOriginValue::new(origin).unwrap_err().to_string())
     }
 
     #[test]
