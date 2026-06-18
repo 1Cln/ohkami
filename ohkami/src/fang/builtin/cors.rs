@@ -36,11 +36,6 @@ impl std::fmt::Display for CorsOriginError {
 impl CorsOriginValue {
     /// Parse string based on the Cors origin string syntax.
     ///
-    /// # Arguments
-    /// * `s`: &str - The string that represents the URI that should be added to the Cors.
-    ///
-    /// returns: Self (CorsOriginValue)
-    ///
     /// # Examples
     /// ```rust
     /// fn run() {
