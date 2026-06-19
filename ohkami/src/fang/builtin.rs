@@ -81,7 +81,7 @@ impl Origin {
 
         if let Some(host) = uri.host() {
             // Validate max host length
-            if host.chars().count() > u8::MAX as usize {
+            if host.chars().count() > 253 {
                 return Err(OriginError::FaultyUriLength)
             }
 
@@ -113,8 +113,6 @@ impl Origin {
         } else {
             Scheme::Https // definitely Https because of `Self::new` parser logic
         }
-        // #606 will remove such heuristic if-else and then
-        // we just have to access `.scheme` field or something like that
     }
 
     /// Returns the port of this [`Origin`].
@@ -128,22 +126,6 @@ impl Origin {
         self.0.host()
     }
 
-    /// Returns the host as subdomain and domain of this [`Origin`] in a tuple struct like (subdomain: Option<&str>, domain: &str).
-    fn host_as_subdomain_and_domain(&self) -> (Option<&str>, &str) {
-        if let Some(host) = self.0.host() {
-            host.split_once('.')
-                .map_or((None, host), |(subdomain, domain)| {
-                    if domain.contains('.') {
-                        (Some(subdomain), domain)
-                    } else {
-                        (None, host)
-                    }
-                })
-        } else {
-            (None, "")
-        }
-
-    }
 }
 
 impl Display for Origin {
@@ -157,7 +139,7 @@ impl Display for OriginError {
         let output = match self {
             OriginError::InvalidUri(_) => { "Invalid URI." }
             OriginError::FaultyScheme => { "Please use HTTP or HTTPS as scheme." }
-            OriginError::FaultyUriLength => { "URI length mustn't exceed 255 characters in total." }
+            OriginError::FaultyUriLength => { "URI length mustn't exceed 253 characters in total." }
             OriginError::FaultyUriPartLength => { "URI part length mustn't exceed 63 characters." }
             OriginError::FaultyPort => { "Port number was expected." }
             OriginError::FaultyIp => { "Ip was misformatted." }

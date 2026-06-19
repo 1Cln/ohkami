@@ -98,26 +98,25 @@ impl CorsOriginValue {
                         return false;
                     }
 
-                    let (cors_subdomain, cors_domain) = cors_origin.base_origin.host_as_subdomain_and_domain();
-                    let (subdomain, domain) = host
-                        .split_once('.')
-                        .map_or((None, host), |(s, d)| {
-                            if d.contains('.') {
-                                (Some(s), d)
-                            } else {
-                                (None, host)
+                    if let Some(cors_host) = cors_origin.base_origin.host() {
+                        if !cors_origin.any_subdomain {
+                            // If we do not support any subdomain, we can just fully compare the two, as no additional parsing is necessary.
+                            if cors_host != host {
+                                return false;
                             }
-                        });
-
-                    // If subdomain is not a wildcard, validate
-                    if !cors_origin.any_subdomain && cors_subdomain != subdomain {
-                        return false;
+                        } else {
+                            // Subdomain is a wildcard
+                            // If they don't match, check if it's just a subdomain, or something else entirely, meaning it's invalid.
+                            if cors_host != host {
+                                // Returns None if strip fails, meaning some other unknown stuff was appended to the URI.
+                                if None == host.strip_suffix(cors_host) {
+                                    return false;
+                                }
+                            }
+                        }
                     }
+                    // If we do not support any subdomain, we can just fully compare the two, as no additional parsing is necessary.
 
-                    // Check if domain matches.
-                    if domain != cors_domain {
-                        return false;
-                    }
                     // Subdomain, domain and port match, so return true.
                     true
                 } else {
