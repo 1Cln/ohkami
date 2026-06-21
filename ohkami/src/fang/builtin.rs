@@ -41,6 +41,7 @@ pub enum OriginError {
     //...
 }
 
+#[derive(PartialEq)]
 pub enum Scheme {
     Http,
     Https
@@ -64,7 +65,7 @@ impl Origin {
     /// - Scheme must be either HTTP or HTTPS.
     /// - URI length mustn't exceed 255 characters in total.
     /// - URI parts mustn't exceed 63 characters per.
-    /// - Ports must be numeric.
+    /// - Ports must be numeric and <= 65535 (u16::MAX).
     /// - IP strings like 192.168.1.0 cannot have wildcards.
     ///
     fn new(s: &str) -> Result<Self, OriginError> {

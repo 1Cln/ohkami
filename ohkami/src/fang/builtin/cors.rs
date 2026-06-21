@@ -83,6 +83,7 @@ impl CorsOriginValue {
     ///     assert_eq!(true, cors.matches_str("localhost:5173")); // true
     /// }
     /// ```
+    #[allow(unused)]
     fn matches_str(&self, incoming_origin: &str) -> bool {
         match self {
             CorsOriginValue::CorsOrigin(cors_origin) => {
@@ -99,23 +100,18 @@ impl CorsOriginValue {
                     }
 
                     if let Some(cors_host) = cors_origin.base_origin.host() {
-                        if !cors_origin.any_subdomain {
+                        if !cors_origin.any_subdomain && cors_host != host {
                             // If we do not support any subdomain, we can just fully compare the two, as no additional parsing is necessary.
-                            if cors_host != host {
-                                return false;
-                            }
+                            return false;
                         } else {
                             // Subdomain is a wildcard
                             // If they don't match, check if it's just a subdomain, or something else entirely, meaning it's invalid.
-                            if cors_host != host {
+                            if cors_host != host && host.strip_suffix(cors_host).is_none() {
                                 // Returns None if strip fails, meaning some other unknown stuff was appended to the URI.
-                                if None == host.strip_suffix(cors_host) {
-                                    return false;
-                                }
+                                return false;
                             }
                         }
                     }
-                    // If we do not support any subdomain, we can just fully compare the two, as no additional parsing is necessary.
 
                     // Subdomain, domain and port match, so return true.
                     true
@@ -143,10 +139,40 @@ impl CorsOriginValue {
     /// ```
     #[allow(unused)]
     fn matches(&self, incoming_origin: &super::Origin) -> bool {
-        if self.is_any() {
-            return true;
+        match self {
+            CorsOriginValue::CorsOrigin(cors_origin) => {
+                if cors_origin.base_origin.scheme() == incoming_origin.scheme() {
+                    // If no port wildcard, check if ports align.
+                    if !cors_origin.any_port && cors_origin.base_origin.port() != incoming_origin.port() {
+                        return false;
+                    }
+
+                    if !cors_origin.any_subdomain && cors_origin.base_origin.host() != incoming_origin.host() {
+                        // If we do not support any subdomain, we can just fully compare the two, as no additional parsing is necessary.
+                        return false;
+                    } else {
+                        // If they don't match, check if it's just a subdomain, or something else entirely, meaning it's invalid.
+                        if cors_origin.base_origin.host() != incoming_origin.host() { //Check if the options don't already align
+                            if let (Some(cors_host), Some(host)) = (cors_origin.base_origin.host(), incoming_origin.host()) {
+                                // Returns None if strip fails, meaning some other unknown stuff was appended to the URI.
+                                if host.strip_suffix(cors_host).is_none() {
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                    // Validations passed
+                    true
+                } else {
+                    // No scheme was found somehow
+                    false
+                }
+            }
+            CorsOriginValue::Any => {
+                // Anything goes
+                true
+            }
         }
-        self.matches_str(incoming_origin.to_string().as_str())
     }
 
     /// Returns if this [`CorsOriginValue`] is [`CorsOriginValue::Any`].
@@ -258,13 +284,6 @@ impl Cors {
         self.max_age = delta_seconds;
         self
     }
-    pub fn verify_origin<'a>(origin: &'a str, cors_origin: &CorsOriginValue) -> Cow<'a, str> {
-        if CorsOriginValue::matches_str(cors_origin, origin) {
-            Cow::Borrowed(origin)
-        } else {
-            Cow::Owned(cors_origin.to_string())
-        }
-    }
 }
 
 impl<Inner: FangProc> Fang<Inner> for Cors {
@@ -285,15 +304,15 @@ pub struct CorsProc<Inner: FangProc> {
 impl<Inner: FangProc> FangProc for CorsProc<Inner> {
     async fn bite<'b>(&'b self, req: &'b mut Request) -> Response {
         let mut res = self.inner.bite(req).await;
-        let allow_origin = Cors::verify_origin(
-            req.headers.origin().unwrap_or(""),
-            &self.cors.allow_origin,
-        )
-        .into_owned();
+        let incoming_origin = req.headers.origin().and_then(|s| super::Origin::new(s).ok());
+        let access_control_allow_origin = match incoming_origin {
+            Some(incoming) if self.cors.allow_origin.matches(&incoming) => incoming.to_string(),
+            _ => self.cors.allow_origin.to_string(),
+        };
 
         res.headers
             .set()
-            .access_control_allow_origin(allow_origin)
+            .access_control_allow_origin(access_control_allow_origin)
             .vary(self.cors.allow_origin.is_any().then_some("Origin".into()))
             .access_control_allow_credentials(self.cors.allow_credentials.then_some("true".into()))
             .access_control_expose_headers(
@@ -332,91 +351,83 @@ impl<Inner: FangProc> FangProc for CorsProc<Inner> {
 mod test {
     #[test]
     fn cors_accept_regular_origin_ip() {
-        assert_eq!(
-            "https://192.168.1.41:5173",
-            super::Cors::verify_origin(
-                "https://192.168.1.41:5173",
-                &super::CorsOriginValue::new("https://192.168.1.41:5173").unwrap()
+        assert!(
+            super::CorsOriginValue::matches(
+                &super::CorsOriginValue::new("https://192.168.1.41:5173").unwrap(),
+                &super::super::Origin::new("https://192.168.1.41:5173").unwrap(),
             )
         )
     }
 
     #[test]
     fn cors_accept_regular_origin_domain() {
-        assert_eq!(
-            "https://example.com",
-            super::Cors::verify_origin(
-                "https://example.com",
-                &super::CorsOriginValue::new("https://example.com").unwrap()
+        assert!(
+            super::CorsOriginValue::matches(
+                &super::CorsOriginValue::new("https://example.com").unwrap(),
+                &super::super::Origin::new("https://example.com").unwrap(),
             )
         );
-        assert_eq!(
-            "https://sub.example.com",
-            super::Cors::verify_origin(
-                "https://sub.example.com",
-                &super::CorsOriginValue::new("https://sub.example.com").unwrap()
+        assert!(
+            super::CorsOriginValue::matches(
+                &super::CorsOriginValue::new("https://sub.example.com").unwrap(),
+                &super::super::Origin::new("https://sub.example.com").unwrap(),
             )
-        )
+        );
     }
 
     #[test]
     fn cors_accept_origin_localhost() {
-        assert_eq!(
-            "https://localhost:5173/",
-            super::Cors::verify_origin(
-                "https://localhost:5173/",
-                &super::CorsOriginValue::new("https://localhost:5173/").unwrap()
+        assert!(
+            super::CorsOriginValue::matches(
+                &super::CorsOriginValue::new("https://localhost:5173/").unwrap(),
+                &super::super::Origin::new("https://localhost:5173/").unwrap(),
             )
         );
-        assert_eq!(
-            "https://localhost:5173",
-            super::Cors::verify_origin(
-                "https://localhost:5173",
-                &super::CorsOriginValue::new("https://localhost:*").unwrap()
+        assert!(
+            super::CorsOriginValue::matches(
+                &super::CorsOriginValue::new("https://localhost:*").unwrap(),
+                &super::super::Origin::new("https://localhost:5173/").unwrap(),
             )
-        )
+        );
     }
 
     #[test]
     fn cors_accept_wildcard_match_in_own_ip_port() {
-        assert_eq!(
-            "https://192.168.1.2:5173",
-            super::Cors::verify_origin(
-                "https://192.168.1.2:5173",
-                &super::CorsOriginValue::new("https://192.168.1.2:*").unwrap()
+        assert!(
+            super::CorsOriginValue::matches(
+                &super::CorsOriginValue::new("https://192.168.1.2:*").unwrap(),
+                &super::super::Origin::new("https://192.168.1.2:5173").unwrap(),
             )
-        )
+        );
     }
 
     #[test]
     fn cors_accept_wildcard_match_in_own_port() {
-        assert_eq!(
-            "https://example.com:5173",
-            super::Cors::verify_origin(
-                "https://example.com:5173",
-                &super::CorsOriginValue::new("https://example.com:*").unwrap()
+        assert!(
+            super::CorsOriginValue::matches(
+                &super::CorsOriginValue::new("https://example.com:*").unwrap(),
+                &super::super::Origin::new("https://example.com:5173").unwrap(),
             )
-        )
+        );
     }
 
     #[test]
     fn cors_accept_wildcard_match_in_own_subdomain() {
-        assert_eq!(
-            "https://test.example.com",
-            super::Cors::verify_origin(
-                "https://test.example.com",
-                &super::CorsOriginValue::new("https://*.example.com").unwrap()
+        assert!(
+            super::CorsOriginValue::matches(
+                &super::CorsOriginValue::new("https://*.example.com").unwrap(),
+                &super::super::Origin::new("https://test.example.com").unwrap(),
             )
-        )
+        );
     }
 
     #[test]
     fn cors_deny_wildcard_in_origin_ip_subdomain() {
         assert_eq!(
-            "https://192.168.1.15:8080/",
-            super::Cors::verify_origin(
-                "https://*.168.1.15:8080",
-                &super::CorsOriginValue::new("https://192.168.1.15:8080").unwrap()
+            false,
+            super::CorsOriginValue::matches(
+                &super::CorsOriginValue::new("https://192.168.1.15:8080").unwrap(),
+                &super::super::Origin::new("https://*.168.1.15:8080").unwrap(),
             )
         )
     }
@@ -424,21 +435,10 @@ mod test {
     #[test]
     fn cors_deny_faulty_wildcard_in_origin_ip() {
         assert_eq!(
-            "https://192.168.1.15:8080/",
-            super::Cors::verify_origin(
-                "https://192.*.1.15:8080",
-                &super::CorsOriginValue::new("https://192.168.1.15:8080").unwrap()
-            )
-        )
-    }
-
-    #[test]
-    fn cors_deny_faulty_wildcard_in_origin_ip_subdomain() {
-        assert_eq!(
-            "https://192.168.1.15:8080/",
-            super::Cors::verify_origin(
-                "https://*.168.1.15:8080",
-                &super::CorsOriginValue::new("https://192.168.1.15:8080").unwrap()
+            false,
+            super::CorsOriginValue::matches(
+                &super::CorsOriginValue::new("https://192.168.1.15:8080").unwrap(),
+                &super::super::Origin::new("https://192.*.1.15:8080").unwrap(),
             )
         )
     }
@@ -446,10 +446,10 @@ mod test {
     #[test]
     fn cors_deny_wildcard_in_origin_sld() {
         assert_eq!(
-            "https://test.example.com:8080/",
-            super::Cors::verify_origin(
-                "https://test.*.com:8080",
-                &super::CorsOriginValue::new("https://test.example.com:8080").unwrap()
+            false,
+            super::CorsOriginValue::matches(
+                &super::CorsOriginValue::new("https://test.example.com:8080").unwrap(),
+                &super::super::Origin::new("https://test.*.com:8080").unwrap(),
             )
         )
     }
@@ -457,10 +457,10 @@ mod test {
     #[test]
     fn cors_deny_wildcard_in_origin_extension() {
         assert_eq!(
-            "https://test.example.com:8080/",
-            super::Cors::verify_origin(
-                "https://test.example.*:8080",
-                &super::CorsOriginValue::new("https://test.example.com:8080").unwrap()
+            false,
+            super::CorsOriginValue::matches(
+                &super::CorsOriginValue::new("https://test.example.com:8080").unwrap(),
+                &super::super::Origin::new("https://test.example.*:8080").unwrap(),
             )
         )
     }
@@ -468,22 +468,20 @@ mod test {
     #[test]
     fn cors_deny_invalid_origin_ip() {
         assert_eq!(
-            "https://192.168.1.58:8080/",
-            super::Cors::verify_origin(
-                "https://192.168.a.58:8080",
-                &super::CorsOriginValue::new("https://192.168.1.58:8080").unwrap()
+            false,
+            super::CorsOriginValue::matches(
+                &super::CorsOriginValue::new("https://192.168.1.58:8080").unwrap(),
+                &super::super::Origin::new("https://192.168.a.58:8080").unwrap(),
             )
         )
     }
 
     #[test]
     fn cors_deny_invalid_origin_ip_port_range() {
+        // Origin:new with a faulty IP should give OriginError::FaultyPort. This error cannot be compared with super::CorsOriginValue::matches(), due to it being an error.
         assert_eq!(
-            "https://192.168.1.0:8080/",
-            super::Cors::verify_origin(
-                "https://192.168.1.0:80080",
-                &super::CorsOriginValue::new("https://192.168.1.0:8080").unwrap()
-            )
+            super::CorsOriginError::InvalidOrigin(super::OriginError::FaultyPort).to_string(),
+            super::super::Origin::new("https://192.168.1.0:80080").unwrap_err().to_string(),
         )
     }
 
