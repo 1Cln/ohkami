@@ -182,19 +182,6 @@ impl CorsOriginValue {
 
 }
 
-impl std::fmt::Display for CorsOriginValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CorsOriginValue::CorsOrigin(origin) => {
-                write!(f, "{}", origin)
-            }
-            CorsOriginValue::Any => {
-                write!(f, "*")
-            }
-        }
-    }
-}
-
 /// # Builtin fang for CORS config
 ///
 /// <br>
@@ -219,7 +206,7 @@ impl std::fmt::Display for CorsOriginValue {
 #[derive(Clone, Debug)]
 pub struct Cors {
     /* pub(crate) allow_methods: Option<String>, // owe to `Handler::default_not_found()` */
-    pub(crate) allow_origin: CorsOriginValue,
+    pub(crate) allow_origin_config: CorsOriginValue,
     pub(crate) allow_credentials: bool,
     pub(crate) allow_headers: Option<String>,
     pub(crate) expose_headers: Option<String>,
@@ -231,7 +218,7 @@ impl Cors {
     /// (Both `"*"` and a specific origin are available)
     pub fn new(origin: impl Into<Cow<'static, str>>) -> Self {
         Self {
-            allow_origin: CorsOriginValue::new(origin.into().as_ref())
+            allow_origin_config: CorsOriginValue::new(origin.into().as_ref())
                 .unwrap_or_else(|err| panic!("[Cors::new] {err}")),
             allow_credentials: false,
             allow_headers: None,
@@ -244,7 +231,7 @@ impl Cors {
     /// Creates `Cors` with any origin allowed
     pub const fn any() -> Self {
         Self {
-            allow_origin: CorsOriginValue::Any,
+            allow_origin_config: CorsOriginValue::Any,
             allow_credentials: false,
             allow_headers: None,
             expose_headers: None,
@@ -254,7 +241,7 @@ impl Cors {
 
     pub fn allow_credentials(mut self, yes: bool) -> Self {
         if yes {
-            if self.allow_origin.is_any() {
+            if self.allow_origin_config.is_any() {
                 #[cfg(debug_assertions)]
                 {
                     crate::WARNING!(
@@ -306,14 +293,20 @@ impl<Inner: FangProc> FangProc for CorsProc<Inner> {
         let mut res = self.inner.bite(req).await;
         let incoming_origin = req.headers.origin().and_then(|s| super::Origin::new(s).ok());
         let access_control_allow_origin = match incoming_origin {
-            Some(incoming) if self.cors.allow_origin.matches(&incoming) => incoming.to_string(),
-            _ => self.cors.allow_origin.to_string(),
+            Some(incoming) if self.cors.allow_origin_config.matches(&incoming) => incoming.to_string(),
+            _ => {
+                if let CorsOriginValue::CorsOrigin(cors_origin) = &self.cors.allow_origin_config {
+                    cors_origin.base_origin.to_string()
+                } else {
+                    String::from("*")
+                }
+            },
         };
 
         res.headers
             .set()
             .access_control_allow_origin(access_control_allow_origin)
-            .vary(self.cors.allow_origin.is_any().then_some("Origin".into()))
+            .vary(self.cors.allow_origin_config.is_any().then_some("Origin".into()))
             .access_control_allow_credentials(self.cors.allow_credentials.then_some("true".into()))
             .access_control_expose_headers(
                 self.cors
