@@ -294,12 +294,10 @@ impl<Inner: FangProc> FangProc for CorsProc<Inner> {
         let incoming_origin = req.headers.origin().and_then(|s| super::Origin::new(s).ok());
         let access_control_allow_origin = match incoming_origin {
             Some(incoming) if self.cors.allow_origin_config.matches(&incoming) => incoming.to_string(),
-            _ => {
-                if let CorsOriginValue::CorsOrigin(cors_origin) = &self.cors.allow_origin_config {
-                    cors_origin.base_origin.to_string()
-                } else {
-                    String::from("*")
-                }
+            _ => if let CorsOriginValue::CorsOrigin(cors_origin) = &self.cors.allow_origin_config {
+                cors_origin.base_origin.to_string()
+            } else {
+                String::from("*")
             },
         };
 
