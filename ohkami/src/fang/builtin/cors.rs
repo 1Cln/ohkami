@@ -354,8 +354,7 @@ mod test {
 
     #[test]
     fn cors_deny_wildcard_in_origin_ip_subdomain() {
-        assert_eq!(
-            false,
+        assert!(
             AllowOriginConfig::new("https://192.168.1.15:8080").unwrap().allows(
                 &Origin::new("https://*.168.1.15:8080").unwrap()
             )
@@ -364,9 +363,8 @@ mod test {
 
     #[test]
     fn cors_deny_faulty_wildcard_in_origin_ip() {
-        assert_eq!(
-            false,
-            AllowOriginConfig::new("https://192.168.1.15:8080").unwrap().allows(
+        assert!(
+            !AllowOriginConfig::new("https://192.168.1.15:8080").unwrap().allows(
                 &Origin::new("https://192.*.1.15:8080").unwrap()
             )
         )
@@ -374,9 +372,8 @@ mod test {
 
     #[test]
     fn cors_deny_wildcard_in_origin_sld() {
-        assert_eq!(
-            false,
-            AllowOriginConfig::new("https://test.example.com:8080").unwrap().allows(
+        assert!(
+            !AllowOriginConfig::new("https://test.example.com:8080").unwrap().allows(
                 &Origin::new("https://test.*.com:8080").unwrap()
             )
         )
