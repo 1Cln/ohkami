@@ -1,5 +1,4 @@
 mod basicauth;
-use std::fmt::{Display, Formatter};
 pub use basicauth::BasicAuth;
 
 mod cors;
@@ -37,8 +36,7 @@ pub enum OriginError {
     FaultyUriLength,
     FaultyUriPartLength,
     FaultyPort,
-    FaultyIp,
-    //...
+    FaultyIp
 }
 
 #[derive(PartialEq)]
@@ -107,7 +105,6 @@ impl Origin {
     }
 
     /// Returns the scheme of this [`Origin`].
-    #[allow(unused)]
     fn scheme(&self) -> Scheme {
         if self.0.scheme() == Some(&http::uri::Scheme::HTTP) {
             Scheme::Http
@@ -122,21 +119,37 @@ impl Origin {
     }
 
     /// Returns the host of this [`Origin`].
-    #[allow(unused)]
     fn host(&self) -> Option<&str> {
         self.0.host()
     }
 
 }
 
-impl Display for Origin {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Display for Origin {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
-impl Display for OriginError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+impl PartialEq for OriginError {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            // `http::uri::InvalidUri` doesn't implement `PartialEq`
+            (Self::InvalidUri(a), Self::InvalidUri(b)) =>
+                a.to_string() == b.to_string(),
+            | (Self::FaultyScheme, Self::FaultyScheme)
+            | (Self::FaultyUriLength, Self::FaultyUriLength)
+            | (Self::FaultyUriPartLength, Self::FaultyUriPartLength)
+            | (Self::FaultyPort, Self::FaultyPort)
+            | (Self::FaultyIp, Self::FaultyIp)
+            => true,
+            _ => false
+        }
+    }
+}
+
+impl std::fmt::Display for OriginError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let output = match self {
             OriginError::InvalidUri(_) => { "Invalid URI." }
             OriginError::FaultyScheme => { "Please use HTTP or HTTPS as scheme." }
