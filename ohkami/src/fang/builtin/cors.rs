@@ -59,7 +59,7 @@ impl CorsOrigin {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum CorsOriginError {
     InvalidOrigin(OriginError)
 }
@@ -424,8 +424,8 @@ mod test {
     fn cors_deny_invalid_origin_ip_port_range() {
         // Origin:new with a faulty IP should give OriginError::FaultyPort. This error cannot be compared with super::CorsOriginValue::matches(), due to it being an error.
         assert_eq!(
-            CorsOriginError::InvalidOrigin(super::OriginError::FaultyPort).to_string(),
-            Origin::new("https://192.168.1.0:80080").unwrap_err().to_string(),
+            super::OriginError::FaultyPort,
+            Origin::new("https://192.168.1.0:80080").unwrap_err(),
         )
     }
 
@@ -449,31 +449,31 @@ mod test {
     #[test]
     fn cors_scheme_invalidation() {
         let origin = "foobarhttp://example.com";
-        assert_eq!(CorsOriginError::InvalidOrigin(super::OriginError::FaultyScheme).to_string(), super::AllowOriginConfig::new(origin).unwrap_err().to_string())
+        assert_eq!(super::OriginError::FaultyScheme, Origin::new(origin).unwrap_err())
     }
 
     #[test]
     fn cors_length_invalidation() {
         let origin = "https://thisisaridiculouslylongurithatshoulddefinitelybeinvalidaccordingtothistest.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijkl.com";
-        assert_eq!(CorsOriginError::InvalidOrigin(super::OriginError::FaultyUriLength).to_string(), super::AllowOriginConfig::new(origin).unwrap_err().to_string())
+        assert_eq!(super::OriginError::FaultyUriLength, Origin::new(origin).unwrap_err())
     }
 
     #[test]
     fn cors_part_length_invalidation() {
         let origin = "https://www.abcdefghijklmnopqrstuvwxyzabcdefghijklmnoqrstuvwxyzabcdefghijklmnopqrstuvwxyz.com";
-        assert_eq!(CorsOriginError::InvalidOrigin(super::OriginError::FaultyUriPartLength).to_string(), super::AllowOriginConfig::new(origin).unwrap_err().to_string())
+        assert_eq!(super::OriginError::FaultyUriPartLength, Origin::new(origin).unwrap_err())
     }
 
     #[test]
     fn cors_port_invalidation() {
         let origin = "http://example.com:abcd";
-        assert_eq!(CorsOriginError::InvalidOrigin(super::OriginError::FaultyPort).to_string(), super::AllowOriginConfig::new(origin).unwrap_err().to_string())
+        assert_eq!(super::OriginError::FaultyPort, Origin::new(origin).unwrap_err())
     }
 
     #[test]
     fn cors_ip_subdomain_wildcard_invalidation() {
         let origin = "https://*.168.1.0:8080";
-        assert_eq!(CorsOriginError::InvalidOrigin(super::OriginError::FaultyIp).to_string(), super::AllowOriginConfig::new(origin).unwrap_err().to_string())
+        assert_eq!(CorsOriginError::InvalidOrigin(super::OriginError::FaultyIp), AllowOriginConfig::new(origin).unwrap_err())
     }
 
     #[test]
