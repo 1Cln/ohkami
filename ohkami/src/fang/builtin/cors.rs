@@ -421,15 +421,6 @@ mod test {
     }
 
     #[test]
-    fn cors_deny_invalid_origin_ip_port_range() {
-        // Origin:new with a faulty IP should give OriginError::FaultyPort. This error cannot be compared with super::CorsOriginValue::matches(), due to it being an error.
-        assert_eq!(
-            super::OriginError::FaultyPort,
-            Origin::new("https://192.168.1.0:80080").unwrap_err(),
-        )
-    }
-
-    #[test]
     fn cors_new_with_str_or_string() {
         let _: super::Cors = super::Cors::new("https://example.com");
         let _: super::Cors = super::Cors::new(String::from("https://") + "example.com");
@@ -447,41 +438,9 @@ mod test {
     }
 
     #[test]
-    fn cors_scheme_invalidation() {
-        let origin = "foobarhttp://example.com";
-        assert_eq!(super::OriginError::FaultyScheme, Origin::new(origin).unwrap_err())
-    }
-
-    #[test]
-    fn cors_length_invalidation() {
-        let origin = "https://thisisaridiculouslylongurithatshoulddefinitelybeinvalidaccordingtothistest.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijkl.com";
-        assert_eq!(super::OriginError::FaultyUriLength, Origin::new(origin).unwrap_err())
-    }
-
-    #[test]
-    fn cors_part_length_invalidation() {
-        let origin = "https://www.abcdefghijklmnopqrstuvwxyzabcdefghijklmnoqrstuvwxyzabcdefghijklmnopqrstuvwxyz.com";
-        assert_eq!(super::OriginError::FaultyUriPartLength, Origin::new(origin).unwrap_err())
-    }
-
-    #[test]
-    fn cors_port_invalidation() {
-        let origin = "http://example.com:abcd";
-        assert_eq!(super::OriginError::FaultyPort, Origin::new(origin).unwrap_err())
-    }
-
-    #[test]
     fn cors_ip_subdomain_wildcard_invalidation() {
         let origin = "https://*.168.1.0:8080";
         assert_eq!(CorsOriginError::InvalidOrigin(super::OriginError::FaultyIp), AllowOriginConfig::new(origin).unwrap_err())
-    }
-
-    #[test]
-    #[should_panic(
-        expected = "[Cors::new] Invalid URI."
-    )]
-    fn cors_host_invalidation() {
-        let _: super::Cors = super::Cors::new("http://%example.com");
     }
 
     #[test]

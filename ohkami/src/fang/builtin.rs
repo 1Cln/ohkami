@@ -163,8 +163,47 @@ impl std::fmt::Display for OriginError {
     }
 }
 
+#[cfg(test)]
 mod test {
+    use super::{Origin, OriginError};
 
-    // #[test]
+    #[test]
+    fn origin_scheme_invalidation() {
+        let origin = "foobarhttp://example.com";
+        assert_eq!(OriginError::FaultyScheme, Origin::new(origin).unwrap_err())
+    }
 
+    #[test]
+    fn origin_length_invalidation() {
+        let origin = "https://thisisaridiculouslylongurithatshoulddefinitelybeinvalidaccordingtothistest.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijkl.com";
+        assert_eq!(OriginError::FaultyUriLength, Origin::new(origin).unwrap_err())
+    }
+
+    #[test]
+    fn origin_part_length_invalidation() {
+        let origin = "https://www.abcdefghijklmnopqrstuvwxyzabcdefghijklmnoqrstuvwxyzabcdefghijklmnopqrstuvwxyz.com";
+        assert_eq!(OriginError::FaultyUriPartLength, Origin::new(origin).unwrap_err())
+    }
+
+    #[test]
+    fn origin_port_invalidation() {
+        let origin = "http://example.com:abcd";
+        assert_eq!(OriginError::FaultyPort, Origin::new(origin).unwrap_err())
+    }
+
+    #[test]
+    fn origin_deny_invalid_ip_port_range() {
+        // Origin:new with a faulty IP should give OriginError::FaultyPort. This error cannot be compared with super::CorsOriginValue::matches(), due to it being an error.
+        assert_eq!(
+            OriginError::FaultyPort,
+            Origin::new("https://192.168.1.0:80080").unwrap_err(),
+        )
+    }
+
+    #[test]
+    fn origin_host_invalidation() {
+        assert!(
+            Origin::new("http://%example.com").is_err() //Gives InvalidUri error, which's enums aren't public so unable to directly compare.
+        )
+    }
 }
