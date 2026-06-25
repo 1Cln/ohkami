@@ -17,7 +17,7 @@ pub struct CorsOrigin {
 
 impl CorsOrigin {
     /// Parse string into [`CorsOrigin`], checks for wildcards inside the string,
-    /// and if all appropriate validation succeeds inside [`Origin`] returns Self.
+    /// and if all appropriate validation succeeds inside [`Origin`] and [`CorsOrigin`] returns Self.
     ///
     /// # Examples
     /// ```rust
@@ -27,13 +27,18 @@ impl CorsOrigin {
     /// }
     /// ```
     /// # Errors
-    /// This function will return an error if the given URI string fails the validation included in [`Origin`].
+    /// This function returns an error if the given string fails either of the following criteria:
+    /// - If an IP-address is using a subdomain wildcard.
+    /// - If the validation included in [`Origin`] fails.
     ///
     fn new(s: &str) -> Result<Self, CorsOriginError> {
         let mut any_port = false;
         let mut any_subdomain = false;
         let mut s = match s.strip_suffix(":*") {
             Some(rest) => {
+                if rest.chars().all(|c| c.is_numeric() || ":.*".contains(c)) {
+                    return Err(CorsOriginError::InvalidOrigin(OriginError::FaultyIp))
+                }
                 any_port = true;
                 Cow::Borrowed(rest)
             }
