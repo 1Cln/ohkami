@@ -15,6 +15,45 @@ pub struct CorsOrigin {
     any_subdomain: bool,
 }
 
+impl CorsOrigin {
+    /// Parse string into [`CorsOrigin`], checks for wildcards inside the string,
+    /// and if all appropriate validation succeeds inside [`Origin`] returns Self.
+    ///
+    /// # Examples
+    /// ```rust
+    /// fn run() {
+    ///     CorsOrigin::new("https://*.localhost:3000").unwrap(); //Gives CorsOrigin
+    ///     CorsOrigin::new("https://*.localhost:").unwrap(); //Gives CorsOriginError
+    /// }
+    /// ```
+    /// # Errors
+    /// This function will return an error if the given URI string fails the validation included in [`Origin`].
+    ///
+    fn new(s: &str) -> Result<Self, CorsOriginError> {
+        let mut any_port = false;
+        let mut any_subdomain = false;
+        let mut s = match s.strip_suffix(":*") {
+            Some(rest) => {
+                any_port = true;
+                Cow::Borrowed(rest)
+            }
+            None => Cow::Borrowed(s)
+        };
+
+        if let Some((scheme @ ("http://" | "https://"), rest)) = s.split_once("*.") {
+            any_subdomain = true;
+            // This allocation would not be a problem because `CorsOrigin::new` is
+            // just called once in server initialization phase, not called repeatedly in request handling phases.
+            s = Cow::Owned(scheme.to_string() + rest);
+        }
+
+        let base_origin = Origin::new(&s)
+            .map_err(CorsOriginError::InvalidOrigin)?;
+
+        Ok(Self { base_origin, any_port, any_subdomain })
+    }
+}
+
 #[derive(Debug)]
 pub enum CorsOriginError {
     InvalidOrigin(OriginError)
@@ -38,34 +77,13 @@ impl AllowOriginConfig {
     /// }
     /// ```
     /// # Errors
-    /// This function will return an error if the given URI string fails the validation included in [`Origin`].
+    /// This function will return an error if the given URI string fails the validation included in [`CorsOrigin`] or [`Origin`].
     ///
     fn new(s: &str) -> Result<Self, CorsOriginError> {
-        if s == "*" {
-            return Ok(Self::Any);
+        match s {
+            "*" => Ok(Self::Any),
+            _ => CorsOrigin::new(s).map(Self::CorsOrigin)
         }
-
-        let mut any_port = false;
-        let mut any_subdomain = false;
-        let mut s = match s.strip_suffix(":*") {
-            Some(rest) => {
-                any_port = true;
-                Cow::Borrowed(rest)
-            }
-            None => Cow::Borrowed(s)
-        };
-
-        if let Some((scheme @ ("http://" | "https://"), rest)) = s.split_once("*.") {
-            any_subdomain = true;
-            // This allocation would not be a problem because `CorsOrigin::new` is
-            // just called once in server initialization phase, not called repeatedly in request handling phases.
-            s = Cow::Owned(scheme.to_string() + rest);
-        }
-
-        let base_origin = Origin::new(&s)
-            .map_err(CorsOriginError::InvalidOrigin)?;
-
-        Ok(Self::CorsOrigin(CorsOrigin { base_origin, any_port, any_subdomain }) )
     }
 
     /// Checks if according to the noted rules for wildcards in this struct, the incoming origin would match.
@@ -355,7 +373,7 @@ mod test {
     #[test]
     fn cors_deny_wildcard_in_origin_ip_subdomain() {
         assert!(
-            AllowOriginConfig::new("https://192.168.1.15:8080").unwrap().allows(
+            !AllowOriginConfig::new("https://192.168.1.15:8080").unwrap().allows(
                 &Origin::new("https://*.168.1.15:8080").unwrap()
             )
         )
