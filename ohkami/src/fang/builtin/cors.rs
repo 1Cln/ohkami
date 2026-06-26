@@ -1,4 +1,5 @@
 use crate::{Fang, FangProc, Request, Response, Status, header::append};
+use core::{clone::Clone, option::Option::Some};
 use std::borrow::Cow;
 use super::{Origin, OriginError};
 
@@ -117,12 +118,23 @@ impl AllowOriginConfig {
                         // If we do not support any subdomain, we can just fully compare the two, as no additional parsing is necessary.
                         return false;
                     } else {
-                        // If they don't match, check if it's just a subdomain, or something else entirely, meaning it's invalid.
                         if cors_origin.base_origin.host() != incoming_origin.host() { //Check if the options don't already align
                             if let (Some(cors_host), Some(host)) = (cors_origin.base_origin.host(), incoming_origin.host()) {
                                 // Returns None if host doesn't start with cors_host, meaning some other unknown stuff was appended to the URI.
-                                if !host.ends_with(cors_host) {
+                                if !host.ends_with(&cors_host) {
                                     return false;
+                                } else if host != cors_host && let Some(rest) = host.strip_suffix(cors_host) {
+                                    if !rest.contains('.') {
+                                        return false; // Deny wrong domain
+                                    } else {
+                                        if !cors_origin.any_subdomain {
+                                            return false; // Deny prepended subdomain while none are allowed.
+                                        } else {
+                                            if rest.contains("..") || rest.split('.').filter(|s| s != &"").count() >= 2 {
+                                                return false; // Deny if not a direct subdomain or any parts are ".."
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -371,6 +383,48 @@ mod test {
         assert!(
             AllowOriginConfig::new("https://*.example.com").unwrap().allows(
                 &Origin::new("https://test.example.com").unwrap()
+            )
+        );
+    }
+
+    #[test]
+    fn cors_deny_indirect_origin_subdomain() {
+        assert!(
+            !AllowOriginConfig::new("https://b.example.com").unwrap().allows(
+                &Origin::new("https://a.b.example.com").unwrap()
+            )
+        );
+
+        assert!(
+            !AllowOriginConfig::new("https://*.example.com").unwrap().allows(
+                &Origin::new("https://a.b.example.com").unwrap()
+            )
+        );
+
+        assert!(
+            !AllowOriginConfig::new("https://*.example.com").unwrap().allows(
+                &Origin::new("https://a..example.com").unwrap()
+            )
+        );
+
+        assert!(
+            !AllowOriginConfig::new("https://*.example.com").unwrap().allows(
+                &Origin::new("https://..example.com").unwrap()
+            )
+        );
+
+        assert!(
+            !AllowOriginConfig::new("https://example.com").unwrap().allows(
+                &Origin::new("https://..example.com").unwrap()
+            )
+        );
+    }
+
+    #[test]
+    fn cors_deny_wrong_domain() {
+        assert!(
+            !AllowOriginConfig::new("https://example.com").unwrap().allows(
+                &Origin::new("https://anexample.com").unwrap()
             )
         );
     }
