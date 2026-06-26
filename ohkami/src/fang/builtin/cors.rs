@@ -120,7 +120,6 @@ impl AllowOriginConfig {
                     } else {
                         if cors_origin.base_origin.host() != incoming_origin.host() { //Check if the options don't already align
                             if let (Some(cors_host), Some(host)) = (cors_origin.base_origin.host(), incoming_origin.host()) {
-                                // Returns None if host doesn't start with cors_host, meaning some other unknown stuff was appended to the URI.
                                 if !host.ends_with(&cors_host) {
                                     return false;
                                 } else if host != cors_host && let Some(rest) = host.strip_suffix(cors_host) {
