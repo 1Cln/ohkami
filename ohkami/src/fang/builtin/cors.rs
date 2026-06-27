@@ -1,5 +1,4 @@
 use crate::{Fang, FangProc, Request, Response, Status, header::append};
-use core::{clone::Clone, option::Option::Some};
 use std::borrow::Cow;
 use super::{Origin, OriginError};
 
@@ -73,6 +72,16 @@ impl std::fmt::Display for CorsOriginError {
 }
 
 impl AllowOriginConfig {
+    /// Returns a fallback Access-Control-Allow-Origin String of this [`AllowOriginConfig`].
+    fn fallback_access_control_allow_origin(&self) -> String {
+        match &self {
+            AllowOriginConfig::Any => String::from("*"),
+            // `base_origin` itself is always an allowed origin.
+            AllowOriginConfig::CorsOrigin(cors_origin)
+            => cors_origin.base_origin.to_string(),
+        }
+    }
+
     /// Parse string based on the Cors origin string syntax.
     ///
     /// # Examples
@@ -102,8 +111,8 @@ impl AllowOriginConfig {
     ///     assert!(cors.allows(origin)); // true
     /// }
     /// ```
-    #[allow(unused)]
-    fn allows(&self, incoming_origin: &super::Origin) -> bool {
+    ///
+    fn allows(&self, incoming_origin: &Origin) -> bool {
         match self {
             AllowOriginConfig::CorsOrigin(cors_origin) => {
                 if !(cors_origin.base_origin.scheme() == incoming_origin.scheme()) {
@@ -146,16 +155,6 @@ impl AllowOriginConfig {
                 // Anything goes
                 true
             }
-        }
-    }
-
-    /// Returns the fallback access control allow origin String of this [`AllowOriginConfig`].
-    fn fallback_access_control_allow_origin(&self) -> String {
-        match &self {
-            AllowOriginConfig::Any => String::from("*"),
-            // `base_origin` itself is always an allowed origin.
-            AllowOriginConfig::CorsOrigin(cors_origin)
-                => cors_origin.base_origin.to_string(),
         }
     }
 
@@ -275,7 +274,7 @@ pub struct CorsProc<Inner: FangProc> {
 impl<Inner: FangProc> FangProc for CorsProc<Inner> {
     async fn bite<'b>(&'b self, req: &'b mut Request) -> Response {
         let mut res = self.inner.bite(req).await;
-        let incoming_origin = req.headers.origin().and_then(|s| super::Origin::new(s).ok());
+        let incoming_origin = req.headers.origin().and_then(|s| Origin::new(s).ok());
         let access_control_allow_origin = match incoming_origin {
             Some(incoming) if self.cors.allow_origin_config.allows(&incoming) => incoming.to_string(),
             _ => self.cors.allow_origin_config.fallback_access_control_allow_origin(),
@@ -320,6 +319,7 @@ impl<Inner: FangProc> FangProc for CorsProc<Inner> {
 
 #[cfg(test)]
 mod test {
+    use crate::fang::OriginError;
     use super::{AllowOriginConfig, CorsOriginError, Origin};
 
     #[test]
@@ -493,7 +493,7 @@ mod test {
     #[test]
     fn cors_ip_subdomain_wildcard_invalidation() {
         let origin = "https://*.168.1.0:8080";
-        assert_eq!(CorsOriginError::InvalidOrigin(super::OriginError::FaultyIp), AllowOriginConfig::new(origin).unwrap_err())
+        assert_eq!(CorsOriginError::InvalidOrigin(OriginError::FaultyIp), AllowOriginConfig::new(origin).unwrap_err())
     }
 
     #[test]

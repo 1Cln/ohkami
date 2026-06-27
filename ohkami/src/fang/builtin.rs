@@ -104,7 +104,6 @@ impl Origin {
         Ok(Self(uri))
     }
 
-    /// Returns the scheme of this [`Origin`].
     fn scheme(&self) -> Scheme {
         if self.0.scheme() == Some(&http::uri::Scheme::HTTP) {
             Scheme::Http
@@ -113,12 +112,10 @@ impl Origin {
         }
     }
 
-    /// Returns the port of this [`Origin`].
     fn port(&self) -> Option<u16> {
         self.0.port_u16()
     }
 
-    /// Returns the host of this [`Origin`].
     fn host(&self) -> Option<&str> {
         self.0.host()
     }
