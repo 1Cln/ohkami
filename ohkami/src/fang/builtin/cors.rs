@@ -116,38 +116,39 @@ impl AllowOriginConfig {
         match self {
             AllowOriginConfig::CorsOrigin(cors_origin) => {
                 if !(cors_origin.base_origin.scheme() == incoming_origin.scheme()) {
-                    false
-                } else {
-                    // If no port wildcard, check if ports align.
-                    if !cors_origin.any_port && cors_origin.base_origin.port() != incoming_origin.port() {
-                        return false;
-                    }
+                    return false;
+                }
+                // If no port wildcard, check if ports align.
+                if !cors_origin.any_port && cors_origin.base_origin.port() != incoming_origin.port() {
+                    return false;
+                }
 
-                    if !cors_origin.any_subdomain && cors_origin.base_origin.host() != incoming_origin.host() {
-                        // If we do not support any subdomain, we can just fully compare the two, as no additional validation is necessary.
-                        return false;
-                    } else if cors_origin.base_origin.host() != incoming_origin.host() { //Check if the options don't already align
-                        if let (Some(cors_host), Some(host)) = (cors_origin.base_origin.host(), incoming_origin.host()) {
-                            if !host.ends_with(&cors_host) {
-                                return false;
-                            } else if host != cors_host && let Some(rest) = host.strip_suffix(cors_host) {
-                                if !rest.contains('.') {
-                                    return false; // Deny wrong domain
-                                } else {
-                                    if !cors_origin.any_subdomain {
-                                        return false; // Deny prepended subdomain while none are allowed.
-                                    } else {
-                                        if rest.contains("..") || rest.split('.').filter(|s| s != &"").count() >= 2 {
-                                            return false; // Deny if not a direct subdomain or any parts are ".."
-                                        }
-                                    }
-                                }
+                if !cors_origin.any_subdomain && cors_origin.base_origin.host() != incoming_origin.host() {
+                    // If we do not support any subdomain, we can just fully compare the two, as no additional validation is necessary.
+                    return false;
+                }
+
+                if cors_origin.base_origin.host() != incoming_origin.host() { //Check if the options don't already align
+                    if let (Some(cors_host), Some(host)) = (cors_origin.base_origin.host(), incoming_origin.host()) {
+                        if !host.ends_with(&cors_host) {
+                            return false;
+                        }
+
+                        if host != cors_host && let Some(rest) = host.strip_suffix(cors_host) {
+                            if !rest.contains('.') {
+                                return false; // Deny wrong domain
+                            }
+                            if !cors_origin.any_subdomain {
+                                return false; // Deny prepended subdomain while none are allowed.
+                            }
+                            if rest.contains("..") || rest.split('.').filter(|s| s != &"").count() >= 2 {
+                                return false; // Deny if not a direct subdomain or any parts are ".."
                             }
                         }
                     }
-                    // Validations passed
-                    true
                 }
+                // Validations passed
+                true
             }
             AllowOriginConfig::Any => {
                 // Anything goes
