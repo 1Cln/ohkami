@@ -389,32 +389,17 @@ mod test {
     #[test]
     fn cors_deny_indirect_origin_subdomain() {
         assert!(
+            !AllowOriginConfig::new("https://*.example.com").unwrap().allows(
+                &Origin::new("https://a.b.example.com").unwrap()
+            )
+        );
+    }
+
+    #[test]
+    fn cors_deny_wrong_origin_subdomain() {
+        assert!(
             !AllowOriginConfig::new("https://b.example.com").unwrap().allows(
                 &Origin::new("https://a.b.example.com").unwrap()
-            )
-        );
-
-        assert!(
-            !AllowOriginConfig::new("https://*.example.com").unwrap().allows(
-                &Origin::new("https://a.b.example.com").unwrap()
-            )
-        );
-
-        assert!(
-            !AllowOriginConfig::new("https://*.example.com").unwrap().allows(
-                &Origin::new("https://a..example.com").unwrap()
-            )
-        );
-
-        assert!(
-            !AllowOriginConfig::new("https://*.example.com").unwrap().allows(
-                &Origin::new("https://..example.com").unwrap()
-            )
-        );
-
-        assert!(
-            !AllowOriginConfig::new("https://example.com").unwrap().allows(
-                &Origin::new("https://..example.com").unwrap()
             )
         );
     }
@@ -426,51 +411,6 @@ mod test {
                 &Origin::new("https://anexample.com").unwrap()
             )
         );
-    }
-
-    #[test]
-    fn cors_deny_wildcard_in_origin_ip_subdomain() {
-        assert!(
-            !AllowOriginConfig::new("https://192.168.1.15:8080").unwrap().allows(
-                &Origin::new("https://*.168.1.15:8080").unwrap()
-            )
-        )
-    }
-
-    #[test]
-    fn cors_deny_faulty_wildcard_in_origin_ip() {
-        assert!(
-            !AllowOriginConfig::new("https://192.168.1.15:8080").unwrap().allows(
-                &Origin::new("https://192.*.1.15:8080").unwrap()
-            )
-        )
-    }
-
-    #[test]
-    fn cors_deny_wildcard_in_origin_sld() {
-        assert!(
-            !AllowOriginConfig::new("https://test.example.com:8080").unwrap().allows(
-                &Origin::new("https://test.*.com:8080").unwrap()
-            )
-        )
-    }
-
-    #[test]
-    fn cors_deny_wildcard_in_origin_extension() {
-        assert!(
-            !AllowOriginConfig::new("https://test.example.com:8080").unwrap().allows(
-                &Origin::new("https://test.example.*:8080").unwrap()
-            )
-        )
-    }
-
-    #[test]
-    fn cors_deny_invalid_origin_ip() {
-        assert!(
-            !AllowOriginConfig::new("https://192.168.1.58:8080").unwrap().allows(
-                &Origin::new("https://192.168.a.58:8080").unwrap()
-            )
-        )
     }
 
     #[test]
@@ -492,8 +432,7 @@ mod test {
 
     #[test]
     fn cors_ip_subdomain_wildcard_invalidation() {
-        let origin = "https://*.168.1.0:8080";
-        assert_eq!(CorsOriginError::InvalidOrigin(OriginError::FaultyIp), AllowOriginConfig::new(origin).unwrap_err())
+        assert_eq!(AllowOriginConfig::new("https://*.168.1.0:8080").unwrap_err(), CorsOriginError::InvalidOrigin(OriginError::FaultyIp))
     }
 
     #[test]
