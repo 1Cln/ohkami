@@ -142,7 +142,7 @@ impl AllowOriginConfig {
                                 return false; // Deny prepended subdomain while none are allowed.
                             }
                             if rest.contains("..") || rest.split('.').filter(|s| s != &"").count() >= 2 {
-                                return false; // Deny if not a direct subdomain or any parts are ".."
+                                return false; // Deny if not a direct subdomain
                             }
                         }
                     }
