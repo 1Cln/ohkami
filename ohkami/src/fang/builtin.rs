@@ -75,7 +75,7 @@ impl Origin {
 
         // Additional validation
         // Validate scheme is HTTP or HTTPS
-        if let Some(scheme) = uri.scheme() && scheme != &Scheme::HTTP && scheme != &Scheme::HTTPS {
+        if uri.scheme().is_none_or(|s| s != &Scheme::HTTP && s != &Scheme::HTTPS) {
             return Err(OriginError::FaultyScheme);
         }
 
