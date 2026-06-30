@@ -1,4 +1,5 @@
 use crate::{Fang, FangProc, Request, Response, Status, header::append};
+use core::option::Option::Some;
 use std::borrow::Cow;
 use super::{Origin, OriginError};
 
@@ -39,22 +40,21 @@ impl CorsOrigin {
     fn new(s: &str) -> Result<Self, CorsOriginError> {
         let mut any_port = false;
         let mut any_subdomain = false;
-        let mut s = match s.strip_suffix(":*") {
-            Some(rest) => {
-                if rest.chars().all(|c| c.is_numeric() || ":.*".contains(c)) {
-                    return Err(CorsOriginError::InvalidOrigin(OriginError::FaultyIp))
-                }
-                any_port = true;
-                Cow::Borrowed(rest)
-            }
-            None => Cow::Borrowed(s)
-        };
+
+        let mut s = Cow::Borrowed(s);
+
+        if let Some(rest) = s.strip_suffix(":*") {
+            any_port = true;
+            s = Cow::Owned(rest.to_string());
+        }
 
         if let Some((scheme @ ("http://" | "https://"), rest)) = s.split_once("*.") {
             any_subdomain = true;
-            // This allocation would not be a problem because `CorsOrigin::new` is
-            // just called once in server initialization phase, not called repeatedly in request handling phases.
             s = Cow::Owned(scheme.to_string() + rest);
+        }
+
+        if s.chars().all(|c| c.is_numeric() || ":.*".contains(c)) {
+            return Err(CorsOriginError::InvalidOrigin(OriginError::FaultyIp))
         }
 
         let base_origin = Origin::new(&s)
