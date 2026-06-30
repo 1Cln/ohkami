@@ -121,8 +121,8 @@ impl Origin {
         self.0.port_u16()
     }
 
-    fn host(&self) -> Option<&str> {
-        self.0.host()
+    fn host(&self) -> &str {
+        self.0.host().expect("host MUST NOT be empty in Origin.")
     }
 
 }
