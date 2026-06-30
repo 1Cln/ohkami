@@ -99,6 +99,8 @@ impl Origin {
             if split_host.len() < 4 && host.chars().all(|c| c.is_numeric() || c == '.') {
                 return Err(OriginError::FaultyIp)
             }
+        } else {
+            return Err(OriginError::MalformedUri)
         }
 
         // Check if user intended to add a port to Origin, but it's parsed out by http::uri::Uri, return invalid port error
