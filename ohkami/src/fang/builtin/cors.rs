@@ -129,21 +129,20 @@ impl AllowOriginConfig {
                 }
 
                 if cors_origin.base_origin.host() != incoming_origin.host() { //Check if the options don't already align
-                    if let (Some(cors_host), Some(host)) = (cors_origin.base_origin.host(), incoming_origin.host()) {
-                        if !host.ends_with(&cors_host) {
-                            return false;
-                        }
+                    if !incoming_origin.host().ends_with(&cors_origin.base_origin.host()) {
+                        return false;
+                    }
 
-                        if host != cors_host && let Some(rest) = host.strip_suffix(cors_host) {
-                            if !rest.contains('.') {
-                                return false; // Deny wrong domain
-                            }
-                            if !cors_origin.any_subdomain {
-                                return false; // Deny prepended subdomain while none are allowed.
-                            }
-                            if rest.contains("..") || rest.split('.').filter(|s| s != &"").count() >= 2 {
-                                return false; // Deny if not a direct subdomain
-                            }
+                    if incoming_origin.host() != cors_origin.base_origin.host()
+                        && let Some(rest) = incoming_origin.host().strip_suffix(cors_origin.base_origin.host()) {
+                        if !rest.contains('.') {
+                            return false; // Deny wrong domain
+                        }
+                        if !cors_origin.any_subdomain {
+                            return false; // Deny prepended subdomain while none are allowed.
+                        }
+                        if rest.contains("..") || rest.split('.').filter(|s| s != &"").count() >= 2 {
+                            return false; // Deny if not a direct subdomain
                         }
                     }
                 }
