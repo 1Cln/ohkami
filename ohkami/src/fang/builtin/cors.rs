@@ -15,6 +15,11 @@ pub struct CorsOrigin {
     any_subdomain: bool,
 }
 
+#[derive(Debug, PartialEq)]
+pub enum CorsOriginError {
+    InvalidOrigin(OriginError)
+}
+
 impl CorsOrigin {
     /// Parse string into [`CorsOrigin`], checks for wildcards inside the string,
     /// and if all appropriate validation succeeds inside [`Origin`] and [`CorsOrigin`] returns Self.
@@ -57,11 +62,6 @@ impl CorsOrigin {
 
         Ok(Self { base_origin, any_port, any_subdomain })
     }
-}
-
-#[derive(Debug, PartialEq)]
-pub enum CorsOriginError {
-    InvalidOrigin(OriginError)
 }
 
 impl std::fmt::Display for CorsOriginError {
