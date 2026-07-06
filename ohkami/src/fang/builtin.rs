@@ -79,28 +79,28 @@ impl Origin {
             return Err(OriginError::FaultyScheme);
         }
 
-        if let Some(host) = uri.host() {
-            // Validate max host length
-            if host.chars().count() > 253 {
-                return Err(OriginError::FaultyUriLength)
-            }
+        let Some(host) = uri.host() else {
+          return Err(OriginError::MalformedUri)
+        };
 
-            if host.contains("..") {
-                return Err(OriginError::MalformedUri)
-            }
+        // Validate max host length
+        if host.chars().count() > 253 {
+            return Err(OriginError::FaultyUriLength)
+        }
 
-            let split_host: Vec<&str> = host.split('.').collect();
-
-            // Validate max part length
-            if !split_host.iter().all(|part| part.chars().count() <= 63) {
-                return Err(OriginError::FaultyUriPartLength)
-            }
-
-            if split_host.len() < 4 && host.chars().all(|c| c.is_numeric() || c == '.') {
-                return Err(OriginError::FaultyIp)
-            }
-        } else {
+        if host.contains("..") {
             return Err(OriginError::MalformedUri)
+        }
+
+        let split_host: Vec<&str> = host.split('.').collect();
+
+        // Validate max part length
+        if !split_host.iter().all(|part| part.chars().count() <= 63) {
+            return Err(OriginError::FaultyUriPartLength)
+        }
+
+        if split_host.len() < 4 && host.chars().all(|c| c.is_numeric() || c == '.') {
+            return Err(OriginError::FaultyIp)
         }
 
         // Check if user intended to add a port to Origin, but it's parsed out by http::uri::Uri, return invalid port error
@@ -124,6 +124,7 @@ impl Origin {
     }
 
     fn host(&self) -> &str {
+        // assured by `Origin::new` + .unwrap()
         self.0.host().expect("host MUST NOT be empty in Origin.")
     }
 
@@ -243,22 +244,41 @@ mod test {
     }
 
     #[test]
-    fn origin_host_invalidation() {
+    fn origin_malformed_uri_invalidation() {
         assert!(
             Origin::new("http://%example.com").is_err() //Gives InvalidUri error, which's enums aren't public so unable to directly compare.
-        )
-    }
-
-    #[test]
-    fn origin_malformed_uri_invalidation() {
-        assert_eq!(
-            &OriginError::MalformedUri,
-            &Origin::new("https://a..example.com").unwrap_err()
         );
 
         assert_eq!(
-            &OriginError::MalformedUri,
-            &Origin::new("https://..example.com").unwrap_err()
+            &Origin::new("https://a..example.com").unwrap_err(),
+            &OriginError::MalformedUri
+        );
+
+        assert_eq!(
+            &Origin::new("https://..example.com").unwrap_err(),
+            &OriginError::MalformedUri
+        );
+    }
+
+    #[test]
+    fn origin_non_existent_host_invalidation() {
+        assert_eq!(
+            &Origin::new("/api/hello").unwrap_err(),
+            &OriginError::FaultyScheme
+        );
+
+        assert!(
+            &Origin::new("https:///api/hello").is_err() // http::URI gives an InvalidUri InvalidScheme error
+        );
+
+        assert_eq!(
+            &Origin::new("https://example/api/hello").unwrap_err(), //Todo: make this return Err
+            &OriginError::FaultyScheme
+        );
+
+        assert_eq!(
+            &Origin::new("https://sub").unwrap_err(), //Todo: make this return Err.
+            &OriginError::MalformedUri
         );
     }
 }

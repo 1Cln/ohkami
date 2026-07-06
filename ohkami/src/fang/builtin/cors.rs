@@ -123,9 +123,9 @@ impl AllowOriginConfig {
                     return false;
                 }
 
-                if !cors_origin.any_subdomain && cors_origin.base_origin.host() != incoming_origin.host() {
-                    // If we do not support any subdomain, we can just fully compare the two, as no additional validation is necessary.
-                    return false;
+                // If we do not support any subdomain, we can just fully compare the two, as no additional validation is necessary.
+                if !cors_origin.any_subdomain {
+                    return cors_origin.base_origin.host() != incoming_origin.host();
                 }
 
                 if cors_origin.base_origin.host() != incoming_origin.host() { //Check if the options don't already align
@@ -138,15 +138,11 @@ impl AllowOriginConfig {
                         if !rest.contains('.') {
                             return false; // Deny wrong domain
                         }
-                        if !cors_origin.any_subdomain {
-                            return false; // Deny prepended subdomain while none are allowed.
-                        }
                         if rest.contains("..") || rest.split('.').filter(|s| s != &"").count() >= 2 {
                             return false; // Deny if not a direct subdomain
                         }
                     }
                 }
-                // Validations passed
                 true
             }
             AllowOriginConfig::Any => {
