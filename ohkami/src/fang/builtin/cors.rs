@@ -1,5 +1,4 @@
 use crate::{Fang, FangProc, Request, Response, Status, header::append};
-use core::convert::Into;
 use std::borrow::Cow;
 use super::{Origin, OriginError};
 
@@ -50,9 +49,12 @@ impl CorsOrigin {
         }
 
         if let Some((scheme @ ("http://" | "https://"), host)) = s.split_once("*.") {
-            if host.parse::<core::net::IpAddr>().is_ok() {
-                return Err(CorsOriginError::FaultyWildcardInIp)
+            if let Some((ip, _port)) =  host.rsplit_once(":") {
+                if ip.parse::<core::net::IpAddr>().is_ok() {
+                    return Err(CorsOriginError::FaultyWildcardInIp)
+                }
             }
+
             any_subdomain = true;
             s = Cow::Owned(scheme.to_string() + host);
         }
@@ -427,7 +429,8 @@ mod test {
 
     #[test]
     fn cors_ip_subdomain_wildcard_invalidation() {
-        assert_eq!(AllowOriginConfig::new("https://*.168.1.0:8080").unwrap_err(), CorsOriginError::InvalidOrigin(OriginError::FaultyIp))
+        assert_eq!(AllowOriginConfig::new("https://*.168.1.0:8080").unwrap_err(), CorsOriginError::InvalidOrigin(OriginError::FaultyIp));
+        assert_eq!(AllowOriginConfig::new("https://*.192.168.1.0:8080").unwrap_err(), CorsOriginError::FaultyWildcardInIp)
     }
 
     #[test]
