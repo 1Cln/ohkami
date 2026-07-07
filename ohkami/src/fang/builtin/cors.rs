@@ -1,5 +1,5 @@
 use crate::{Fang, FangProc, Request, Response, Status, header::append};
-use core::option::Option::Some;
+use core::convert::Into;
 use std::borrow::Cow;
 use super::{Origin, OriginError};
 
@@ -18,7 +18,8 @@ pub struct CorsOrigin {
 
 #[derive(Debug, PartialEq)]
 pub enum CorsOriginError {
-    InvalidOrigin(OriginError)
+    InvalidOrigin(OriginError),
+    FaultyWildcardInIp,
 }
 
 impl CorsOrigin {
@@ -48,9 +49,13 @@ impl CorsOrigin {
             s = Cow::Owned(rest.to_string());
         }
 
-        if let Some((scheme @ ("http://" | "https://"), rest)) = s.split_once("*.") {
-            any_subdomain = true;
-            s = Cow::Owned(scheme.to_string() + rest);
+        if let Some((scheme @ ("http://" | "https://"), host)) = s.split_once("*.") {
+            if let Ok(_) = host.parse::<core::net::IpAddr>() {
+                return Err(CorsOriginError::FaultyWildcardInIp)
+            } else {
+                any_subdomain = true;
+                s = Cow::Owned(scheme.to_string() + host);
+            };
         }
 
         let base_origin = Origin::new(&s)
@@ -62,8 +67,11 @@ impl CorsOrigin {
 
 impl std::fmt::Display for CorsOriginError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let CorsOriginError::InvalidOrigin(e) = self;
-        write!(f, "{}", e)
+        let output= match self {
+            CorsOriginError::InvalidOrigin(e) => e.to_string(),
+            CorsOriginError::FaultyWildcardInIp => String::from("Found invalid wildcard in IP address")
+        };
+        write!(f, "{}", output)
     }
 }
 
@@ -121,7 +129,7 @@ impl AllowOriginConfig {
 
                 // If we do not support any subdomain, we can just fully compare the two, as no additional validation is necessary.
                 if !cors_origin.any_subdomain {
-                    return cors_origin.base_origin.host() != incoming_origin.host();
+                    return cors_origin.base_origin.host() == incoming_origin.host();
                 }
 
                 if cors_origin.base_origin.host() != incoming_origin.host() { //Check if the options don't already align
