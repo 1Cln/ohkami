@@ -90,7 +90,7 @@ impl Origin {
         };
 
         // This means a random . was appended to host without a tld
-        if tld == "" {
+        if tld.is_empty() {
             return Err(OriginError::InvalidHost)
         }
 

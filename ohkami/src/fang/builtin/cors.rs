@@ -50,7 +50,7 @@ impl CorsOrigin {
         }
 
         if let Some((scheme @ ("http://" | "https://"), host)) = s.split_once("*.") {
-            if let Ok(_) = host.parse::<core::net::IpAddr>() {
+            if host.parse::<core::net::IpAddr>().is_ok() {
                 return Err(CorsOriginError::FaultyWildcardInIp)
             }
             any_subdomain = true;
