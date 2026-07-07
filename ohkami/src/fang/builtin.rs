@@ -85,14 +85,17 @@ impl Origin {
             return Err(OriginError::InvalidHost)
         };
 
-        let Some((_sld, tld)) = host.rsplit_once('.') else {
-            return Err(OriginError::InvalidHost)
-        };
+        if host != "localhost" {
+            let Some((_sld, tld)) = host.rsplit_once('.') else {
+                return Err(OriginError::InvalidHost)
+            };
 
-        // This means a random . was appended to host without a tld
-        if tld.is_empty() {
-            return Err(OriginError::InvalidHost)
+            // This means a random . was appended to host without a tld
+            if tld.is_empty() {
+                return Err(OriginError::InvalidHost)
+            }
         }
+
 
         // Validate max host length
         if host.chars().count() > 253 {
