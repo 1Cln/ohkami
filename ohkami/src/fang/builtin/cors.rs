@@ -52,10 +52,9 @@ impl CorsOrigin {
         if let Some((scheme @ ("http://" | "https://"), host)) = s.split_once("*.") {
             if let Ok(_) = host.parse::<core::net::IpAddr>() {
                 return Err(CorsOriginError::FaultyWildcardInIp)
-            } else {
-                any_subdomain = true;
-                s = Cow::Owned(scheme.to_string() + host);
-            };
+            }
+            any_subdomain = true;
+            s = Cow::Owned(scheme.to_string() + host);
         }
 
         let base_origin = Origin::new(&s)
@@ -69,7 +68,7 @@ impl std::fmt::Display for CorsOriginError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let output= match self {
             CorsOriginError::InvalidOrigin(e) => e.to_string(),
-            CorsOriginError::FaultyWildcardInIp => String::from("Found invalid wildcard in IP address")
+            CorsOriginError::FaultyWildcardInIp => String::from("Found invalid wildcard in IP address.")
         };
         write!(f, "{}", output)
     }
