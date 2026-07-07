@@ -37,7 +37,9 @@ pub enum OriginError {
     FaultyUriPartLength,
     FaultyPort,
     FaultyIp,
-    MalformedUri
+    DisallowedCharacter,
+    MalformedUri,
+    InvalidHost,
 }
 
 #[derive(PartialEq)]
@@ -80,12 +82,25 @@ impl Origin {
         }
 
         let Some(host) = uri.host() else {
-          return Err(OriginError::MalformedUri)
+            return Err(OriginError::InvalidHost)
         };
+
+        let Some((_sld, tld)) = host.rsplit_once('.') else {
+            return Err(OriginError::InvalidHost)
+        };
+
+        // This means a random . was appended to host without a tld
+        if tld == "" {
+            return Err(OriginError::InvalidHost)
+        }
 
         // Validate max host length
         if host.chars().count() > 253 {
             return Err(OriginError::FaultyUriLength)
+        }
+
+        if !host.chars().all(|c| c.is_alphanumeric() || ".:-".contains(c)) {
+            return Err(OriginError::DisallowedCharacter)
         }
 
         if host.contains("..") {
@@ -147,7 +162,9 @@ impl PartialEq for OriginError {
             | (Self::FaultyUriPartLength, Self::FaultyUriPartLength)
             | (Self::FaultyPort, Self::FaultyPort)
             | (Self::FaultyIp, Self::FaultyIp)
+            | (Self::InvalidHost, Self::InvalidHost)
             | (Self::MalformedUri, Self::MalformedUri)
+            | (Self::DisallowedCharacter, Self::DisallowedCharacter)
             => true,
             _ => false
         }
@@ -163,7 +180,9 @@ impl std::fmt::Display for OriginError {
             OriginError::FaultyUriPartLength => { "URI part length mustn't exceed 63 characters." }
             OriginError::FaultyPort => { "Port number was expected." }
             OriginError::FaultyIp => { "Ip was misformatted." }
+            OriginError::InvalidHost => { "Invalid URI for usage in Origin." }
             OriginError::MalformedUri => { "URI is malformed." }
+            OriginError::DisallowedCharacter => { "Origin URI contains a disallowed character. (Must be alphanumeric or either of -.:" }
         };
 
         write!(f, "{}", output)
@@ -175,39 +194,48 @@ mod test {
     use super::{Origin, OriginError};
 
     #[test]
+    fn origin_validate_valid_origins_ips() {
+        assert!(Origin::new("http://192.168.1.2").is_ok());
+        assert!(Origin::new("https://192.168.1.2").is_ok());
+        assert!(Origin::new("https://192.168.1.2:3000").is_ok());
+        assert!(Origin::new("https://192.168.1.2:80").is_ok());
+    }
+
+    #[test]
+    fn origin_validate_valid_origins() {
+        assert!(Origin::new("http://example.com").is_ok());
+        assert!(Origin::new("https://example.com").is_ok());
+        assert!(Origin::new("https://example.com:3000").is_ok());
+        assert!(Origin::new("https://example.com:80").is_ok());
+        assert!(Origin::new("https://sub.example.com").is_ok());
+        assert!(Origin::new("https://sub.example.com:3000").is_ok());
+    }
+
+    #[test]
     fn origin_invalid_origin_ip_invalidation() {
         assert_eq!(
-            &Origin::new("https://192.168.a.58:8080").unwrap_err(),
-            &OriginError::FaultyIp
-        )
-    }
-
-    #[test]
-    fn origin_wildcard_in_extension_invalidation() {
-        assert_eq!(
-            &Origin::new("https://test.example.*:8080").unwrap_err(),
-            &OriginError::MalformedUri
-        )
-    }
-
-    #[test]
-    fn origin_wildcard_in_sld_invalidation() {
-        assert_eq!(
-            &Origin::new("https://test.*.com:8080").unwrap_err(),
-            &OriginError::MalformedUri
-        )
-    }
-
-    #[test]
-    fn origin_faulty_wildcard_in_ip_invalidation() {
-        assert_eq!(
-            &Origin::new("https://192.*.1.15:8080").unwrap_err(),
-            &OriginError::FaultyIp
+            &Origin::new("https://192.168.a.58:8080").unwrap_err(), // TODO: Fix OK from Origin -> Err
+            &OriginError::DisallowedCharacter
         );
-
         assert_eq!(
-            &Origin::new("https://*.168.1.15:8080").unwrap_err(),
-            &OriginError::FaultyIp
+            &Origin::new("https://192.*.1.15:8080").unwrap_err(), // TODO: Fix OK from Origin -> Err
+            &OriginError::DisallowedCharacter
+        );
+        assert_eq!(
+            &Origin::new("https://*.168.1.15:8080").unwrap_err(), // TODO: Fix OK from Origin -> Err
+            &OriginError::DisallowedCharacter
+        )
+    }
+
+    #[test]
+    fn origin_host_invalidation() {
+        assert_eq!(
+            &Origin::new("https://test.example.*:8080").unwrap_err(), // TODO: Fix OK from Origin -> Err
+            &OriginError::DisallowedCharacter
+        );
+        assert_eq!(
+            &Origin::new("https://test.*.com:8080").unwrap_err(), // TODO: Fix OK from Origin -> Err
+            &OriginError::DisallowedCharacter
         )
     }
 
@@ -236,7 +264,6 @@ mod test {
     #[test]
     fn origin_invalid_ip_port_range_invalidation() {
         // Origin:new with a faulty IP should give OriginError::FaultyPort.
-        // This error cannot be compared with super::CorsOriginValue::matches(), due to it being an error.
         assert_eq!(
             Origin::new("https://192.168.1.0:80080").unwrap_err(),
             OriginError::FaultyPort
@@ -272,13 +299,18 @@ mod test {
         );
 
         assert_eq!(
-            &Origin::new("https://example/api/hello").unwrap_err(), //Todo: make this return Err
-            &OriginError::FaultyScheme
+            &Origin::new("https://example/api/hello").unwrap_err(),
+            &OriginError::InvalidHost
         );
 
         assert_eq!(
-            &Origin::new("https://sub").unwrap_err(), //Todo: make this return Err.
-            &OriginError::MalformedUri
+            &Origin::new("https://example./api/hello").unwrap_err(),
+            &OriginError::InvalidHost
+        );
+
+        assert_eq!(
+            &Origin::new("https://sub").unwrap_err(),
+            &OriginError::InvalidHost
         );
     }
 }

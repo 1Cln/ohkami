@@ -53,10 +53,6 @@ impl CorsOrigin {
             s = Cow::Owned(scheme.to_string() + rest);
         }
 
-        if s.chars().all(|c| c.is_numeric() || ":.*".contains(c)) {
-            return Err(CorsOriginError::InvalidOrigin(OriginError::FaultyIp))
-        }
-
         let base_origin = Origin::new(&s)
             .map_err(CorsOriginError::InvalidOrigin)?;
 
@@ -133,14 +129,12 @@ impl AllowOriginConfig {
                         return false;
                     }
 
-                    if incoming_origin.host() != cors_origin.base_origin.host()
-                        && let Some(rest) = incoming_origin.host().strip_suffix(cors_origin.base_origin.host()) {
-                        if !rest.contains('.') {
-                            return false; // Deny wrong domain
-                        }
-                        if rest.contains("..") || rest.split('.').filter(|s| s != &"").count() >= 2 {
-                            return false; // Deny if not a direct subdomain
-                        }
+                    let rest = incoming_origin.host().strip_suffix(cors_origin.base_origin.host()).expect("Incoming origin should end with CORS origin's base origin host.");
+                    if !rest.contains('.') {
+                        return false; // Deny wrong domain
+                    }
+                    if rest.contains("..") || rest.split('.').filter(|s| s != &"").count() >= 2 {
+                        return false; // Deny if not a direct subdomain
                     }
                 }
                 true
