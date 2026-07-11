@@ -96,12 +96,12 @@ impl Origin {
                 return Err(OriginError::InvalidHost)
             }
 
+            // No digits allowed in gTLDs
             if host.chars().any(|c| !(c.is_ascii_digit() | ":.".contains(c)))
-                && tld.chars().nth(0).is_some_and(|c| !c.is_ascii_alphabetic()) {
+                && !tld.chars().all(|c| c.is_ascii_alphabetic()) {
                 return Err(OriginError::FaultyTLD)
             }
         }
-
 
         // Validate max host length
         if host.chars().count() > 253 {
@@ -261,7 +261,11 @@ mod test {
     #[test]
     fn origin_host_invalidation() {
         assert_eq!(
-            &Origin::new("https://192.168.a.58:8080").unwrap_err(), // Disallowed by ICANN root rules, allowed by RFC 1123
+            &Origin::new("https://192.168.a.58:8080").unwrap_err(), // Disallowed by ICANN gTLD rules, allowed by RFC 1123
+            &OriginError::FaultyTLD
+        );
+        assert_eq!(
+            &Origin::new("https://example.1bc:8080").unwrap_err(), // Disallowed by ICANN gTLD rules, allowed by RFC 1123
             &OriginError::FaultyTLD
         );
         assert_eq!(
