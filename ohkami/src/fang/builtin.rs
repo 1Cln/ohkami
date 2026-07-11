@@ -121,7 +121,16 @@ impl Origin {
             return Err(OriginError::FaultyIp)
         }
 
-        // Check if user intended to add a port to Origin, but it's parsed out by http::uri::Uri, return invalid port error
+        /* TODO: Is this validation needed? If needed, does this correctly work in IPv6
+         In the first place, for what input is this validation needed ?
+
+         Even if considering only IPv4, when an input is something meeting condition
+         `s.split_once(':') && rest.contains(':') && uri.port_u16().is_none()`,
+         it seems already rejected as InvalidUri error at the beginning of Origin::new and this validation seems never used
+         Check if user intended to add a port to Origin, but it's parsed out by http::uri::Uri, return invalid port error
+
+         Read RFC 1123 & 952 to determine whether or not this should or shouldn't be allowed
+         */
         if let Some((_, rest)) = s.split_once(':') && rest.contains(':') && uri.port_u16().is_none() {
             return Err(OriginError::FaultyPort)
         }

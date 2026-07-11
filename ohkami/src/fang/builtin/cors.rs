@@ -138,7 +138,9 @@ impl AllowOriginConfig {
                         return false;
                     }
 
-                    let rest = incoming_origin.host().strip_suffix(cors_origin.base_origin.host()).expect("Incoming origin should end with CORS origin's base origin host.");
+                    let Some(rest) = incoming_origin.host().strip_suffix(cors_origin.base_origin.host()) else {
+                        return false; // If incoming origin doesn't end with Cors base origin, deny.
+                    };
                     if !rest.contains('.') {
                         return false; // Deny wrong domain
                     }
