@@ -133,22 +133,14 @@ impl AllowOriginConfig {
                     return cors_origin.base_origin.host() == incoming_origin.host();
                 }
 
-                if cors_origin.base_origin.host() != incoming_origin.host() { //Check if the options don't already align
-                    if !incoming_origin.host().ends_with(&cors_origin.base_origin.host()) {
-                        return false;
-                    }
-
-                    let Some(rest) = incoming_origin.host().strip_suffix(cors_origin.base_origin.host()) else {
-                        return false; // If incoming origin doesn't end with Cors base origin, deny.
-                    };
-                    if !rest.contains('.') {
-                        return false; // Deny wrong domain
-                    }
-                    if rest.contains("..") || rest.split('.').filter(|s| s != &"").count() >= 2 {
-                        return false; // Deny if not a direct subdomain
-                    }
+                if cors_origin.base_origin.host() == incoming_origin.host() {
+                    true
+                } else { //Check if the options don't already align
+                    incoming_origin
+                        .host()
+                        .split_once('.')
+                        .is_some_and(|(_, h)| h == cors_origin.base_origin.host())
                 }
-                true
             }
             AllowOriginConfig::Any => {
                 // Anything goes
@@ -338,8 +330,18 @@ mod test {
             )
         );
         assert!(
+            AllowOriginConfig::new("https://example.co.uk").unwrap().allows(
+                &Origin::new("https://example.co.uk").unwrap()
+            )
+        );
+        assert!(
             AllowOriginConfig::new("https://sub.example.com").unwrap().allows(
                 &Origin::new("https://sub.example.com").unwrap()
+            )
+        );
+        assert!(
+            AllowOriginConfig::new("https://sub.example.co.uk").unwrap().allows(
+                &Origin::new("https://sub.example.co.uk").unwrap()
             )
         );
     }
@@ -374,6 +376,11 @@ mod test {
                 &Origin::new("https://example.com:5173").unwrap()
             )
         );
+        assert!(
+            AllowOriginConfig::new("https://example.co.uk:*").unwrap().allows(
+                &Origin::new("https://example.co.uk:5173").unwrap()
+            )
+        );
     }
 
     #[test]
@@ -381,6 +388,11 @@ mod test {
         assert!(
             AllowOriginConfig::new("https://*.example.com").unwrap().allows(
                 &Origin::new("https://test.example.com").unwrap()
+            )
+        );
+        assert!(
+            AllowOriginConfig::new("https://*.example.co.uk").unwrap().allows(
+                &Origin::new("https://test.example.co.uk").unwrap()
             )
         );
     }
@@ -408,6 +420,16 @@ mod test {
         assert!(
             !AllowOriginConfig::new("https://example.com").unwrap().allows(
                 &Origin::new("https://anexample.com").unwrap()
+            )
+        );
+        assert!(
+            !AllowOriginConfig::new("https://example.co.uk").unwrap().allows(
+                &Origin::new("https://example.uk").unwrap()
+            )
+        );
+        assert!(
+            !AllowOriginConfig::new("https://example.co.uk").unwrap().allows(
+                &Origin::new("https://example.co").unwrap()
             )
         );
     }

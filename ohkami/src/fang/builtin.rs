@@ -37,6 +37,7 @@ pub enum OriginError {
     FaultyUriPartLength,
     FaultyPort,
     FaultyIp,
+    FaultyTLD,
     DisallowedCharacter,
     MalformedUri,
     InvalidHost,
@@ -94,6 +95,11 @@ impl Origin {
             if tld.is_empty() {
                 return Err(OriginError::InvalidHost)
             }
+
+            if host.chars().any(|c| !(c.is_ascii_digit() | ":.".contains(c)))
+                && tld.chars().nth(0).is_some_and(|c| !c.is_ascii_alphabetic()) {
+                return Err(OriginError::FaultyTLD)
+            }
         }
 
 
@@ -102,7 +108,7 @@ impl Origin {
             return Err(OriginError::FaultyUriLength)
         }
 
-        if !host.chars().all(|c| c.is_alphanumeric() || ".:-".contains(c)) {
+        if !host.chars().all(|c| c.is_ascii_alphanumeric() || ".:-".contains(c)) {
             return Err(OriginError::DisallowedCharacter)
         }
 
@@ -112,26 +118,23 @@ impl Origin {
 
         let split_host: Vec<&str> = host.split('.').collect();
 
-        // Validate max part length
-        if !split_host.iter().all(|part| part.chars().count() <= 63) {
+        // Validate max part length & check if no part starts or ends with a hyphen.
+        if split_host.iter().any(|part| part.chars().count() > 63) {
             return Err(OriginError::FaultyUriPartLength)
+        }
+
+        if split_host.iter().any(|part| part.starts_with('-') || part.ends_with('-')) {
+            return Err(OriginError::DisallowedCharacter)
         }
 
         if split_host.len() < 4 && host.chars().all(|c| c.is_numeric() || c == '.') {
             return Err(OriginError::FaultyIp)
         }
 
-        /* TODO: Is this validation needed? If needed, does this correctly work in IPv6
-         In the first place, for what input is this validation needed ?
-
-         Even if considering only IPv4, when an input is something meeting condition
-         `s.split_once(':') && rest.contains(':') && uri.port_u16().is_none()`,
-         it seems already rejected as InvalidUri error at the beginning of Origin::new and this validation seems never used
-         Check if user intended to add a port to Origin, but it's parsed out by http::uri::Uri, return invalid port error
-
-         Read RFC 1123 & 952 to determine whether or not this should or shouldn't be allowed
-         */
-        if let Some((_, rest)) = s.split_once(':') && rest.contains(':') && uri.port_u16().is_none() {
+        // WORKAROUND: At now, `http::uri::Uri` silently parses with an invalid port value,
+        // and then its `.port()` or `.port_u16()` just returns `None`.
+        // (https://github.com/hyperium/http/issues/509)
+        if uri.authority().is_some_and(|authority| authority.as_str().contains(':') && uri.port().is_none()) {
             return Err(OriginError::FaultyPort)
         }
 
@@ -174,6 +177,7 @@ impl PartialEq for OriginError {
             | (Self::FaultyUriPartLength, Self::FaultyUriPartLength)
             | (Self::FaultyPort, Self::FaultyPort)
             | (Self::FaultyIp, Self::FaultyIp)
+            | (Self::FaultyTLD, Self::FaultyTLD)
             | (Self::InvalidHost, Self::InvalidHost)
             | (Self::MalformedUri, Self::MalformedUri)
             | (Self::DisallowedCharacter, Self::DisallowedCharacter)
@@ -185,19 +189,18 @@ impl PartialEq for OriginError {
 
 impl std::fmt::Display for OriginError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let output = match self {
+        write!(f, "{}", match self {
             OriginError::InvalidUri(_) => { "Invalid URI." }
             OriginError::FaultyScheme => { "Please use HTTP or HTTPS as scheme." }
             OriginError::FaultyUriLength => { "URI length mustn't exceed 253 characters in total." }
             OriginError::FaultyUriPartLength => { "URI part length mustn't exceed 63 characters." }
             OriginError::FaultyPort => { "Port number was expected." }
             OriginError::FaultyIp => { "Ip was misformatted." }
+            OriginError::FaultyTLD => { "TLDs may not start with a digit." }
             OriginError::InvalidHost => { "Invalid URI for usage in Origin." }
             OriginError::MalformedUri => { "URI is malformed." }
-            OriginError::DisallowedCharacter => { "Origin URI contains a disallowed character. (Must be alphanumeric or either of -.:" }
-        };
-
-        write!(f, "{}", output)
+            OriginError::DisallowedCharacter => { "Origin URI contains a disallowed character. (Must be alphanumeric or either of -.: and can't start or end with a hyphen)" }
+        })
     }
 }
 
@@ -206,7 +209,7 @@ mod test {
     use super::{Origin, OriginError};
 
     #[test]
-    fn origin_validate_valid_origins_ips() {
+    fn origin_validate_valid_origins_with_ip() {
         assert!(Origin::new("http://192.168.1.2").is_ok());
         assert!(Origin::new("https://192.168.1.2").is_ok());
         assert!(Origin::new("https://192.168.1.2:3000").is_ok());
@@ -214,41 +217,64 @@ mod test {
     }
 
     #[test]
-    fn origin_validate_valid_origins() {
+    fn origin_validate_valid_origins_with_domain() {
         assert!(Origin::new("http://example.com").is_ok());
         assert!(Origin::new("https://example.com").is_ok());
         assert!(Origin::new("https://example.com:3000").is_ok());
         assert!(Origin::new("https://example.com:80").is_ok());
         assert!(Origin::new("https://sub.example.com").is_ok());
         assert!(Origin::new("https://sub.example.com:3000").is_ok());
+        assert!(Origin::new("https://3xample.com").is_ok());
+        assert!(Origin::new("https://3xample.com").is_ok());
+        assert!(Origin::new("https://3xample.com:8080").is_ok());
+        assert!(Origin::new("https://sub.3xample.com:8080").is_ok());
+    }
+
+    #[test]
+    fn origin_validate_valid_origins_with_fqdn() {
+        assert!(Origin::new("http://localhost").is_ok());
+        assert!(Origin::new("https://localhost").is_ok());
+        assert!(Origin::new("http://localhost:3000").is_ok());
+        assert!(Origin::new("https://localhost:3000").is_ok());
+    }
+
+    #[test]
+    fn origin_invalidate_invalid_origins_with_fqdn() {
+        assert!(Origin::new("http://example").is_err());
+        assert!(Origin::new("https://example").is_err());
+        assert!(Origin::new("http://example:3000").is_err());
+        assert!(Origin::new("https://example:3000").is_err());
     }
 
     #[test]
     fn origin_invalid_origin_ip_invalidation() {
         assert_eq!(
-            &Origin::new("https://192.168.a.58:8080").unwrap_err(), // TODO: Fix OK from Origin -> Err
-            &OriginError::DisallowedCharacter
+            &Origin::new("https://192.*.1.15:8080").unwrap_err(),
+            &OriginError::FaultyTLD
         );
         assert_eq!(
-            &Origin::new("https://192.*.1.15:8080").unwrap_err(), // TODO: Fix OK from Origin -> Err
-            &OriginError::DisallowedCharacter
+            &Origin::new("https://*.168.1.15:8080").unwrap_err(),
+            &OriginError::FaultyTLD
         );
-        assert_eq!(
-            &Origin::new("https://*.168.1.15:8080").unwrap_err(), // TODO: Fix OK from Origin -> Err
-            &OriginError::DisallowedCharacter
-        )
     }
 
     #[test]
     fn origin_host_invalidation() {
         assert_eq!(
-            &Origin::new("https://test.example.*:8080").unwrap_err(), // TODO: Fix OK from Origin -> Err
-            &OriginError::DisallowedCharacter
+            &Origin::new("https://192.168.a.58:8080").unwrap_err(), // Disallowed by ICANN root rules, allowed by RFC 1123
+            &OriginError::FaultyTLD
         );
         assert_eq!(
-            &Origin::new("https://test.*.com:8080").unwrap_err(), // TODO: Fix OK from Origin -> Err
+            &Origin::new("https://test.example.*:8080").unwrap_err(),
+            &OriginError::FaultyTLD
+        );
+        assert_eq!(
+            &Origin::new("https://test.*.com:8080").unwrap_err(),
             &OriginError::DisallowedCharacter
-        )
+        );
+        assert!(
+            &Origin::new("https://ëxample.com:8080").is_err(),
+        );
     }
 
     #[test]
