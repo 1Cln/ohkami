@@ -50,6 +50,9 @@ pub enum Scheme {
 }
 
 impl Origin {
+    const MAX_HOST_LENGTH: usize = 253;
+    const MAX_HOST_LABEL_LENGTH: usize = 63;
+
     /// Parse string into HTTP origin.
     ///
     /// # Examples
@@ -104,7 +107,7 @@ impl Origin {
         }
 
         // Validate max host length
-        if host.chars().count() > 253 {
+        if host.chars().count() > Self::MAX_HOST_LENGTH {
             return Err(OriginError::FaultyUriLength)
         }
 
@@ -119,7 +122,7 @@ impl Origin {
         let split_host: Vec<&str> = host.split('.').collect();
 
         // Validate max part length & check if no part starts or ends with a hyphen.
-        if split_host.iter().any(|part| part.chars().count() > 63) {
+        if split_host.iter().any(|part| part.chars().count() > Self::MAX_HOST_LABEL_LENGTH) {
             return Err(OriginError::FaultyUriPartLength)
         }
 
@@ -127,7 +130,7 @@ impl Origin {
             return Err(OriginError::DisallowedCharacter)
         }
 
-        if split_host.len() < 4 && host.chars().all(|c| c.is_numeric() || c == '.') {
+        if split_host.len() < 4 && host.chars().all(|c| c.is_ascii_digit() || c == '.') {
             return Err(OriginError::FaultyIp)
         }
 
@@ -166,10 +169,11 @@ impl std::fmt::Display for Origin {
     }
 }
 
+// `http::uri::InvalidUri` doesn't implement `PartialEq`
+// (https://github.com/hyperium/http/issues/849)
 impl PartialEq for OriginError {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            // `http::uri::InvalidUri` doesn't implement `PartialEq`
             (Self::InvalidUri(a), Self::InvalidUri(b)) =>
                 a.to_string() == b.to_string(),
             | (Self::FaultyScheme, Self::FaultyScheme)
