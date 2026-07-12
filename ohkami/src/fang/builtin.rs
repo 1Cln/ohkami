@@ -34,12 +34,8 @@ pub enum OriginError {
     InvalidUri(http::uri::InvalidUri),
     FaultyScheme,
     FaultyUriLength,
-    FaultyUriPartLength,
     FaultyPort,
     FaultyIp,
-    FaultyTLD,
-    DisallowedCharacter,
-    MalformedUri,
     InvalidHost,
 }
 
@@ -50,6 +46,7 @@ pub enum Scheme {
 }
 
 impl Origin {
+    const MIN_IP_PART_COUNT: usize = 4;
     const MAX_HOST_LENGTH: usize = 253;
     const MAX_HOST_LABEL_LENGTH: usize = 63;
 
@@ -72,6 +69,7 @@ impl Origin {
     /// - URI parts mustn't exceed 63 characters per.
     /// - Ports must be numeric and <= 65535 (u16::MAX).
     /// - IP strings like 192.168.1.0 cannot have wildcards.
+    /// - Labels must start with a letter or digit.
     ///
     fn new(s: &str) -> Result<Self, OriginError> {
         use http::uri::{Uri, Scheme};
@@ -89,48 +87,24 @@ impl Origin {
             return Err(OriginError::InvalidHost)
         };
 
-        if host != "localhost" {
-            let Some((_sld, tld)) = host.rsplit_once('.') else {
-                return Err(OriginError::InvalidHost)
-            };
-
-            // This means a random . was appended to host without a tld
-            if tld.is_empty() {
-                return Err(OriginError::InvalidHost)
-            }
-
-            // No digits allowed in gTLDs
-            if host.chars().any(|c| !(c.is_ascii_digit() | ":.".contains(c)))
-                && !tld.chars().all(|c| c.is_ascii_alphabetic()) {
-                return Err(OriginError::FaultyTLD)
-            }
-        }
-
         // Validate max host length
         if host.chars().count() > Self::MAX_HOST_LENGTH {
             return Err(OriginError::FaultyUriLength)
         }
 
-        if !host.chars().all(|c| c.is_ascii_alphanumeric() || ".:-".contains(c)) {
-            return Err(OriginError::DisallowedCharacter)
+        let host_labels = host.strip_suffix('.').unwrap_or(host).split('.');
+
+        if !host_labels.clone().all(|label|
+            !label.is_empty() &&
+            label.chars().all(|c| matches!(c, | '0'..='9' | 'a'..='z' | '-')) &&
+            (label.len() <= Self::MAX_HOST_LABEL_LENGTH) &&
+            !label.starts_with('-') && !label.ends_with('-')
+        ) {
+            return Err(OriginError::InvalidHost)
         }
 
-        if host.contains("..") {
-            return Err(OriginError::MalformedUri)
-        }
-
-        let split_host: Vec<&str> = host.split('.').collect();
-
-        // Validate max part length & check if no part starts or ends with a hyphen.
-        if split_host.iter().any(|part| part.chars().count() > Self::MAX_HOST_LABEL_LENGTH) {
-            return Err(OriginError::FaultyUriPartLength)
-        }
-
-        if split_host.iter().any(|part| part.starts_with('-') || part.ends_with('-')) {
-            return Err(OriginError::DisallowedCharacter)
-        }
-
-        if split_host.len() < 4 && host.chars().all(|c| c.is_ascii_digit() || c == '.') {
+        if host_labels.clone().all(|label| label.parse::<u8>().is_ok())
+            && host_labels.count() < Self::MIN_IP_PART_COUNT {
             return Err(OriginError::FaultyIp)
         }
 
@@ -178,13 +152,9 @@ impl PartialEq for OriginError {
                 a.to_string() == b.to_string(),
             | (Self::FaultyScheme, Self::FaultyScheme)
             | (Self::FaultyUriLength, Self::FaultyUriLength)
-            | (Self::FaultyUriPartLength, Self::FaultyUriPartLength)
             | (Self::FaultyPort, Self::FaultyPort)
             | (Self::FaultyIp, Self::FaultyIp)
-            | (Self::FaultyTLD, Self::FaultyTLD)
             | (Self::InvalidHost, Self::InvalidHost)
-            | (Self::MalformedUri, Self::MalformedUri)
-            | (Self::DisallowedCharacter, Self::DisallowedCharacter)
             => true,
             _ => false
         }
@@ -197,13 +167,9 @@ impl std::fmt::Display for OriginError {
             OriginError::InvalidUri(_) => { "Invalid URI." }
             OriginError::FaultyScheme => { "Please use HTTP or HTTPS as scheme." }
             OriginError::FaultyUriLength => { "URI length mustn't exceed 253 characters in total." }
-            OriginError::FaultyUriPartLength => { "URI part length mustn't exceed 63 characters." }
             OriginError::FaultyPort => { "Port number was expected." }
             OriginError::FaultyIp => { "Ip was misformatted." }
-            OriginError::FaultyTLD => { "TLDs may not start with a digit." }
-            OriginError::InvalidHost => { "Invalid URI for usage in Origin." }
-            OriginError::MalformedUri => { "URI is malformed." }
-            OriginError::DisallowedCharacter => { "Origin URI contains a disallowed character. (Must be alphanumeric or either of -.: and can't start or end with a hyphen)" }
+            OriginError::InvalidHost => { "Invalid URI for usage in Origin. (e.g. Part length mustn't exceed 63 characters, start and end with a digit or letter)" }
         })
     }
 }
@@ -240,45 +206,37 @@ mod test {
         assert!(Origin::new("https://localhost").is_ok());
         assert!(Origin::new("http://localhost:3000").is_ok());
         assert!(Origin::new("https://localhost:3000").is_ok());
-    }
-
-    #[test]
-    fn origin_invalidate_invalid_origins_with_fqdn() {
-        assert!(Origin::new("http://example").is_err());
-        assert!(Origin::new("https://example").is_err());
-        assert!(Origin::new("http://example:3000").is_err());
-        assert!(Origin::new("https://example:3000").is_err());
+        assert!(Origin::new("http://example").is_ok());
+        assert!(Origin::new("https://example").is_ok());
+        assert!(Origin::new("http://example:3000").is_ok());
+        assert!(Origin::new("https://example:3000").is_ok());
+        assert!(Origin::new("http://example.").is_ok());
+        assert!(Origin::new("https://example.").is_ok());
+        assert!(Origin::new("http://example.:3000").is_ok());
+        assert!(Origin::new("https://example.:3000").is_ok());
     }
 
     #[test]
     fn origin_invalid_origin_ip_invalidation() {
         assert_eq!(
             &Origin::new("https://192.*.1.15:8080").unwrap_err(),
-            &OriginError::FaultyTLD
+            &OriginError::InvalidHost
         );
         assert_eq!(
             &Origin::new("https://*.168.1.15:8080").unwrap_err(),
-            &OriginError::FaultyTLD
+            &OriginError::InvalidHost
         );
     }
 
     #[test]
     fn origin_host_invalidation() {
         assert_eq!(
-            &Origin::new("https://192.168.a.58:8080").unwrap_err(), // Disallowed by ICANN gTLD rules, allowed by RFC 1123
-            &OriginError::FaultyTLD
-        );
-        assert_eq!(
-            &Origin::new("https://example.1bc:8080").unwrap_err(), // Disallowed by ICANN gTLD rules, allowed by RFC 1123
-            &OriginError::FaultyTLD
-        );
-        assert_eq!(
             &Origin::new("https://test.example.*:8080").unwrap_err(),
-            &OriginError::FaultyTLD
+            &OriginError::InvalidHost
         );
         assert_eq!(
             &Origin::new("https://test.*.com:8080").unwrap_err(),
-            &OriginError::DisallowedCharacter
+            &OriginError::InvalidHost
         );
         assert!(
             &Origin::new("https://ëxample.com:8080").is_err(),
@@ -299,7 +257,7 @@ mod test {
     #[test]
     fn origin_part_length_invalidation() {
         let origin = "https://www.abcdefghijklmnopqrstuvwxyzabcdefghijklmnoqrstuvwxyzabcdefghijklmnopqrstuvwxyz.com";
-        assert_eq!(Origin::new(origin).unwrap_err(), OriginError::FaultyUriPartLength)
+        assert_eq!(Origin::new(origin).unwrap_err(), OriginError::InvalidHost)
     }
 
     #[test]
@@ -324,12 +282,12 @@ mod test {
 
         assert_eq!(
             &Origin::new("https://a..example.com").unwrap_err(),
-            &OriginError::MalformedUri
+            &OriginError::InvalidHost
         );
 
         assert_eq!(
             &Origin::new("https://..example.com").unwrap_err(),
-            &OriginError::MalformedUri
+            &OriginError::InvalidHost
         );
     }
 
@@ -344,19 +302,5 @@ mod test {
             &Origin::new("https:///api/hello").is_err() // http::URI gives an InvalidUri InvalidScheme error
         );
 
-        assert_eq!(
-            &Origin::new("https://example/api/hello").unwrap_err(),
-            &OriginError::InvalidHost
-        );
-
-        assert_eq!(
-            &Origin::new("https://example./api/hello").unwrap_err(),
-            &OriginError::InvalidHost
-        );
-
-        assert_eq!(
-            &Origin::new("https://sub").unwrap_err(),
-            &OriginError::InvalidHost
-        );
     }
 }
