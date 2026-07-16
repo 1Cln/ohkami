@@ -64,12 +64,13 @@ impl Origin {
     /// Rules include:
     ///
     /// - Generalistic http::uri::Uri rules for URI's.
+    /// - URI must not be a path, and instead must be e.g. "sub.example.com"
     /// - Scheme must be either HTTP or HTTPS.
-    /// - URI length mustn't exceed 255 characters in total.
-    /// - URI parts mustn't exceed 63 characters per.
+    /// - Host length mustn't exceed 255 characters in total.
+    /// - Host Label parts mustn't exceed 63 characters per.
     /// - Ports must be numeric and <= 65535 (u16::MAX).
     /// - IP strings like 192.168.1.0 cannot have wildcards.
-    /// - Labels must start with a letter or digit.
+    /// - Labels consist of only letters, digits, or hyphens. Cannot start or end with hyphens.
     ///
     fn new(s: &str) -> Result<Self, OriginError> {
         use http::uri::{Uri, Scheme};
