@@ -37,6 +37,7 @@ pub enum OriginError {
     FaultyPort,
     FaultyIp,
     InvalidHost,
+    InvalidSuffix,
 }
 
 #[derive(PartialEq)]
@@ -64,9 +65,9 @@ impl Origin {
     /// Rules include:
     ///
     /// - Generalistic http::uri::Uri rules for URI's.
-    /// - URI must not be a path, and instead must be e.g. "sub.example.com"
+    /// - URI must not contain path, query or fragment, and instead must be e.g. "https://sub.example.com"
     /// - Scheme must be either HTTP or HTTPS.
-    /// - Host length mustn't exceed 255 characters in total.
+    /// - Host length mustn't exceed 253 characters in total.
     /// - Host Label parts mustn't exceed 63 characters per.
     /// - Ports must be numeric and <= 65535 (u16::MAX).
     /// - IP strings like 192.168.1.0 cannot have wildcards.
@@ -82,6 +83,10 @@ impl Origin {
         // Validate scheme is HTTP or HTTPS
         if uri.scheme().is_none_or(|s| s != &Scheme::HTTP && s != &Scheme::HTTPS) {
             return Err(OriginError::FaultyScheme);
+        } else if let Some(schemeless_uri) = s.strip_prefix(&(uri.scheme_str().unwrap().to_string() + "://"))
+            && schemeless_uri.chars().any(|c| matches!(c, '#' | '/' | '?')) {
+            // If given Origin string contains a path, fragment or query, give InvalidSuffix error.
+            return Err(OriginError::InvalidSuffix)
         }
 
         let Some(host) = uri.host() else {
@@ -132,8 +137,8 @@ impl Origin {
     }
 
     fn host(&self) -> &str {
-        // assured by `Origin::new` + .unwrap()
-        self.0.host().expect("host MUST NOT be empty in Origin.")
+        // assured by `Origin::new`
+        self.0.host().unwrap()
     }
 
 }
@@ -156,6 +161,7 @@ impl PartialEq for OriginError {
             | (Self::FaultyPort, Self::FaultyPort)
             | (Self::FaultyIp, Self::FaultyIp)
             | (Self::InvalidHost, Self::InvalidHost)
+            | (Self::InvalidSuffix, Self::InvalidSuffix)
             => true,
             _ => false
         }
@@ -171,6 +177,7 @@ impl std::fmt::Display for OriginError {
             OriginError::FaultyPort => { "Port number was expected." }
             OriginError::FaultyIp => { "Ip was misformatted." }
             OriginError::InvalidHost => { "Invalid URI for usage in Origin. (e.g. Part length mustn't exceed 63 characters, start and end with a digit or letter)" }
+            OriginError::InvalidSuffix => { "URI should not contain a path, query or segment. (e.g. 'https://example.com/hello' should be 'https://example.com' )" }
         })
     }
 }
@@ -273,6 +280,51 @@ mod test {
             Origin::new("https://192.168.1.0:80080").unwrap_err(),
             OriginError::FaultyPort
         )
+    }
+
+    #[test]
+    fn origin_uri_with_path_invalidation() {
+        // Origin::new cannot have a path in it and should throw an error.
+        assert_eq!(
+            Origin::new("https://192.168.1.0#hello").unwrap_err(),
+            OriginError::InvalidSuffix
+        );
+        assert_eq!(
+            Origin::new("https://192.168.1.0/hello").unwrap_err(),
+            OriginError::InvalidSuffix
+        );
+        assert_eq!(
+            Origin::new("https://192.168.1.0/#hello").unwrap_err(),
+            OriginError::InvalidSuffix
+        );
+        assert_eq!(
+            Origin::new("https://192.168.1.0/?q=hello").unwrap_err(),
+            OriginError::InvalidSuffix
+        );
+        assert_eq!(
+            Origin::new("https://192.168.1.0?q=hello").unwrap_err(),
+            OriginError::InvalidSuffix
+        );
+        assert_eq!(
+            Origin::new("https://example.com/hello").unwrap_err(),
+            OriginError::InvalidSuffix
+        );
+        assert_eq!(
+            Origin::new("https://example.com/?q=helloworld").unwrap_err(),
+            OriginError::InvalidSuffix
+        );
+        assert_eq!(
+            Origin::new("https://example.com?q=helloworld").unwrap_err(),
+            OriginError::InvalidSuffix
+        );
+        assert_eq!(
+            Origin::new("https://example.com/#hello").unwrap_err(),
+            OriginError::InvalidSuffix
+        );
+        assert_eq!(
+            Origin::new("https://example.com#hello").unwrap_err(),
+            OriginError::InvalidSuffix
+        );
     }
 
     #[test]
