@@ -176,7 +176,7 @@ impl std::fmt::Display for OriginError {
             OriginError::FaultyUriLength => { "URI length mustn't exceed 253 characters in total." }
             OriginError::FaultyPort => { "Port number was expected." }
             OriginError::FaultyIp => { "Ip was misformatted." }
-            OriginError::InvalidHost => { "Invalid URI for usage in Origin. (e.g. Part length mustn't exceed 63 characters, start and end with a digit or letter)" }
+            OriginError::InvalidHost => { "Invalid URI for usage in Origin. (e.g. Part length mustn't exceed 63 characters, and start and end with a digit or letter)" }
             OriginError::InvalidSuffix => { "URI should not contain a path, query or segment. (e.g. 'https://example.com/hello' should be 'https://example.com' )" }
         })
     }
