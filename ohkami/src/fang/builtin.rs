@@ -253,7 +253,11 @@ mod test {
 
     #[test]
     fn origin_scheme_invalidation() {
-        assert_eq!(OriginError::FaultyScheme, Origin::new("foobarhttp://example.com").unwrap_err())
+        assert_eq!(OriginError::FaultyScheme, Origin::new("foobarhttp://example.com").unwrap_err());
+        assert_eq!(OriginError::FaultyScheme, Origin::new("example.com").unwrap_err());
+        assert_eq!(OriginError::FaultyScheme, Origin::new("sub.example.com").unwrap_err());
+        assert_eq!(OriginError::FaultyScheme, Origin::new("192.168.1.0").unwrap_err());
+        assert_eq!(OriginError::FaultyScheme, Origin::new("sub.example.com:8080").unwrap_err());
     }
 
     #[test]
