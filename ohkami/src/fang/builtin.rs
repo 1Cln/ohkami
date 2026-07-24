@@ -85,7 +85,7 @@ impl Origin {
             return Err(OriginError::FaultyScheme);
         }
 
-        if s.split_once("://").unwrap().1.contains(&['/', '?', '#']) {
+        if s.split_once("://").unwrap().1.contains(['/', '?', '#']) {
             // If given Origin string contains a path, fragment or query
             return Err(OriginError::InvalidSuffix)
         }
