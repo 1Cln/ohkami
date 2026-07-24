@@ -70,7 +70,7 @@ impl Origin {
     /// - Host length mustn't exceed 253 characters in total.
     /// - Host Label parts mustn't exceed 63 characters per.
     /// - Ports must be numeric and <= 65535 (u16::MAX).
-    /// - IP strings like 192.168.1.0 cannot have wildcards.
+    /// - IP strings like 192.168.1.0 must adhere to their respective rules for IPv4 or IPv6.
     /// - Labels consist of only letters, digits, or hyphens. Cannot start or end with hyphens.
     ///
     fn new(s: &str) -> Result<Self, OriginError> {
@@ -83,9 +83,10 @@ impl Origin {
         // Validate scheme is HTTP or HTTPS
         if uri.scheme().is_none_or(|s| s != &Scheme::HTTP && s != &Scheme::HTTPS) {
             return Err(OriginError::FaultyScheme);
-        } else if let Some(schemeless_uri) = s.strip_prefix(&(uri.scheme_str().unwrap().to_string() + "://"))
-            && schemeless_uri.chars().any(|c| matches!(c, '#' | '/' | '?')) {
-            // If given Origin string contains a path, fragment or query, give InvalidSuffix error.
+        }
+
+        if s.split_once("://").unwrap().1.contains(&['/', '?', '#']) {
+            // If given Origin string contains a path, fragment or query
             return Err(OriginError::InvalidSuffix)
         }
 
@@ -227,37 +228,53 @@ mod test {
     #[test]
     fn origin_invalid_origin_ip_invalidation() {
         assert_eq!(
-            &Origin::new("https://192.*.1.15:8080").unwrap_err(),
-            &OriginError::InvalidHost
+            Origin::new("https://192.*.1.15:8080").unwrap_err(),
+            OriginError::InvalidHost,
         );
         assert_eq!(
-            &Origin::new("https://*.168.1.15:8080").unwrap_err(),
-            &OriginError::InvalidHost
+            Origin::new("https://*.168.1.15:8080").unwrap_err(),
+            OriginError::InvalidHost
         );
     }
 
     #[test]
     fn origin_host_invalidation() {
         assert_eq!(
-            &Origin::new("https://test.example.*:8080").unwrap_err(),
-            &OriginError::InvalidHost
+            Origin::new("https://test.example.*:8080").unwrap_err(),
+            OriginError::InvalidHost
         );
+
         assert_eq!(
-            &Origin::new("https://test.*.com:8080").unwrap_err(),
-            &OriginError::InvalidHost
+            Origin::new("https://test.*.com:8080").unwrap_err(),
+            OriginError::InvalidHost
         );
+
         assert!(
-            &Origin::new("https://ëxample.com:8080").is_err(),
+            Origin::new("https://ëxample.com:8080").is_err()
+        );
+
+        assert!(
+            Origin::new("http://%example.com").is_err() //Gives InvalidUri error, which's enums aren't public so unable to directly compare.
+        );
+
+        assert_eq!(
+            Origin::new("https://a..example.com").unwrap_err(),
+            OriginError::InvalidHost
+        );
+
+        assert_eq!(
+            Origin::new("https://..example.com").unwrap_err(),
+            OriginError::InvalidHost
         );
     }
 
     #[test]
     fn origin_scheme_invalidation() {
-        assert_eq!(OriginError::FaultyScheme, Origin::new("foobarhttp://example.com").unwrap_err());
-        assert_eq!(OriginError::FaultyScheme, Origin::new("example.com").unwrap_err());
-        assert_eq!(OriginError::FaultyScheme, Origin::new("sub.example.com").unwrap_err());
-        assert_eq!(OriginError::FaultyScheme, Origin::new("192.168.1.0").unwrap_err());
-        assert_eq!(OriginError::FaultyScheme, Origin::new("sub.example.com:8080").unwrap_err());
+        assert_eq!(Origin::new("foobarhttp://example.com").unwrap_err(), OriginError::FaultyScheme);
+        assert_eq!(Origin::new("example.com").unwrap_err(), OriginError::FaultyScheme);
+        assert_eq!(Origin::new("sub.example.com").unwrap_err(), OriginError::FaultyScheme);
+        assert_eq!(Origin::new("192.168.1.0").unwrap_err(), OriginError::FaultyScheme);
+        assert_eq!(Origin::new("sub.example.com:8080").unwrap_err(), OriginError::FaultyScheme);
     }
 
     #[test]
@@ -287,8 +304,8 @@ mod test {
     }
 
     #[test]
-    fn origin_uri_with_path_invalidation() {
-        // Origin::new cannot have a path in it and should throw an error.
+    fn origin_uri_with_invalid_suffix_invalidation() {
+        // Origin::new cannot have a path, fragment or query in it and should throw an error.
         assert_eq!(
             Origin::new("https://192.168.1.0#hello").unwrap_err(),
             OriginError::InvalidSuffix
@@ -332,31 +349,14 @@ mod test {
     }
 
     #[test]
-    fn origin_malformed_uri_invalidation() {
-        assert!(
-            Origin::new("http://%example.com").is_err() //Gives InvalidUri error, which's enums aren't public so unable to directly compare.
-        );
-
-        assert_eq!(
-            &Origin::new("https://a..example.com").unwrap_err(),
-            &OriginError::InvalidHost
-        );
-
-        assert_eq!(
-            &Origin::new("https://..example.com").unwrap_err(),
-            &OriginError::InvalidHost
-        );
-    }
-
-    #[test]
     fn origin_non_existent_host_invalidation() {
         assert_eq!(
-            &Origin::new("/api/hello").unwrap_err(),
-            &OriginError::FaultyScheme
+            Origin::new("/api/hello").unwrap_err(),
+            OriginError::FaultyScheme
         );
 
         assert!(
-            &Origin::new("https:///api/hello").is_err() // http::URI gives an InvalidUri InvalidScheme error
+            Origin::new("https:///api/hello").is_err() // http::URI gives an InvalidUri InvalidScheme error
         );
 
     }

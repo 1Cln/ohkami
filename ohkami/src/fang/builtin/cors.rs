@@ -348,13 +348,13 @@ mod test {
     #[test]
     fn cors_accept_origin_localhost() {
         assert!(
-            AllowOriginConfig::new("https://localhost:5173/").unwrap().allows(
-                &Origin::new("https://localhost:5173/").unwrap()
+            AllowOriginConfig::new("https://localhost:5173").unwrap().allows(
+                &Origin::new("https://localhost:5173").unwrap()
             )
         );
         assert!(
             AllowOriginConfig::new("https://localhost:*").unwrap().allows(
-                &Origin::new("https://localhost:5173/").unwrap()
+                &Origin::new("https://localhost:5173").unwrap()
             )
         );
     }
