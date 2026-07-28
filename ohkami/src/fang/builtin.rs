@@ -43,7 +43,7 @@ pub enum OriginError {
 #[derive(PartialEq)]
 pub enum Scheme {
     Http,
-    Https
+    Https,
 }
 
 impl Origin {
@@ -69,57 +69,66 @@ impl Origin {
     /// - Scheme must be either HTTP or HTTPS.
     /// - Host length mustn't exceed 253 characters in total.
     /// - Host Label parts mustn't exceed 63 characters per.
-    /// - Ports must be numeric and <= 65535 (u16::MAX).
+    /// - Ports must be numeric and <= 65535 (`u16::MAX`).
     /// - IP strings like 192.168.1.0 must adhere to their respective rules for IPv4 or IPv6.
     /// - Labels consist of only letters, digits, or hyphens. Cannot start or end with hyphens.
     ///
     fn new(s: &str) -> Result<Self, OriginError> {
-        use http::uri::{Uri, Scheme};
+        use http::uri::{Scheme, Uri};
 
-        let uri = s.parse::<Uri>()
-            .map_err(OriginError::InvalidUri)?;
+        let uri = s.parse::<Uri>().map_err(OriginError::InvalidUri)?;
 
         // Additional validation
         // Validate scheme is HTTP or HTTPS
-        if uri.scheme().is_none_or(|s| s != &Scheme::HTTP && s != &Scheme::HTTPS) {
+        if uri
+            .scheme()
+            .is_none_or(|s| s != &Scheme::HTTP && s != &Scheme::HTTPS)
+        {
             return Err(OriginError::FaultyScheme);
         }
 
         if s.split_once("://").unwrap().1.contains(['/', '?', '#']) {
             // If given Origin string contains a path, fragment or query
-            return Err(OriginError::InvalidSuffix)
+            return Err(OriginError::InvalidSuffix);
         }
 
         let Some(host) = uri.host() else {
-            return Err(OriginError::InvalidHost)
+            return Err(OriginError::InvalidHost);
         };
 
         // Validate max host length
         if host.chars().count() > Self::MAX_HOST_LENGTH {
-            return Err(OriginError::FaultyUriLength)
+            return Err(OriginError::FaultyUriLength);
         }
 
         let host_labels = host.strip_suffix('.').unwrap_or(host).split('.');
 
-        if !host_labels.clone().all(|label|
-            !label.is_empty() &&
-            label.chars().all(|c| matches!(c, | '0'..='9' | 'a'..='z' | '-')) &&
-            (label.len() <= Self::MAX_HOST_LABEL_LENGTH) &&
-            !label.starts_with('-') && !label.ends_with('-')
-        ) {
-            return Err(OriginError::InvalidHost)
+        if !host_labels.clone().all(|label| {
+            !label.is_empty()
+                && label
+                    .chars()
+                    .all(|c| matches!(c, |'0'..='9'| 'a'..='z' | '-'))
+                && (label.len() <= Self::MAX_HOST_LABEL_LENGTH)
+                && !label.starts_with('-')
+                && !label.ends_with('-')
+        }) {
+            return Err(OriginError::InvalidHost);
         }
 
         if host_labels.clone().all(|label| label.parse::<u8>().is_ok())
-            && host_labels.count() < Self::MIN_IP_PART_COUNT {
-            return Err(OriginError::FaultyIp)
+            && host_labels.count() < Self::MIN_IP_PART_COUNT
+        {
+            return Err(OriginError::FaultyIp);
         }
 
         // WORKAROUND: At now, `http::uri::Uri` silently parses with an invalid port value,
         // and then its `.port()` or `.port_u16()` just returns `None`.
         // (https://github.com/hyperium/http/issues/509)
-        if uri.authority().is_some_and(|authority| authority.as_str().contains(':') && uri.port().is_none()) {
-            return Err(OriginError::FaultyPort)
+        if uri
+            .authority()
+            .is_some_and(|authority| authority.as_str().contains(':') && uri.port().is_none())
+        {
+            return Err(OriginError::FaultyPort);
         }
 
         Ok(Self(uri))
@@ -133,6 +142,14 @@ impl Origin {
         }
     }
 
+    fn scheme_str(&self) -> &str {
+        if self.0.scheme() == Some(&http::uri::Scheme::HTTP) {
+            "http"
+        } else {
+            "https" // definitely Https because of `Self::new` parser logic
+        }
+    }
+
     fn port(&self) -> Option<u16> {
         self.0.port_u16()
     }
@@ -142,11 +159,16 @@ impl Origin {
         self.0.host().unwrap()
     }
 
+    fn authority(&self) -> &str {
+        // assured by `Origin::new` for the same reason as `host` method seen above
+        self.0.authority().unwrap().as_str()
+    }
 }
 
 impl std::fmt::Display for Origin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        // Both are assured due to the way Origin is parsed.
+        write!(f, "{}://{}", self.scheme_str(), self.authority())
     }
 }
 
@@ -155,31 +177,47 @@ impl std::fmt::Display for Origin {
 impl PartialEq for OriginError {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
-            (Self::InvalidUri(a), Self::InvalidUri(b)) =>
-                a.to_string() == b.to_string(),
-            | (Self::FaultyScheme, Self::FaultyScheme)
+            (Self::InvalidUri(a), Self::InvalidUri(b)) => a.to_string() == b.to_string(),
+            (Self::FaultyScheme, Self::FaultyScheme)
             | (Self::FaultyUriLength, Self::FaultyUriLength)
             | (Self::FaultyPort, Self::FaultyPort)
             | (Self::FaultyIp, Self::FaultyIp)
             | (Self::InvalidHost, Self::InvalidHost)
-            | (Self::InvalidSuffix, Self::InvalidSuffix)
-            => true,
-            _ => false
+            | (Self::InvalidSuffix, Self::InvalidSuffix) => true,
+            _ => false,
         }
     }
 }
 
 impl std::fmt::Display for OriginError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", match self {
-            OriginError::InvalidUri(_) => { "Invalid URI." }
-            OriginError::FaultyScheme => { "Please use HTTP or HTTPS as scheme." }
-            OriginError::FaultyUriLength => { "URI length mustn't exceed 253 characters in total." }
-            OriginError::FaultyPort => { "Port number was expected." }
-            OriginError::FaultyIp => { "Ip was misformatted." }
-            OriginError::InvalidHost => { "Invalid URI for usage in Origin. (e.g. Part length mustn't exceed 63 characters, and start and end with a digit or letter)" }
-            OriginError::InvalidSuffix => { "URI should not contain a path, query or segment. (e.g. 'https://example.com/hello' should be 'https://example.com' )" }
-        })
+        write!(
+            f,
+            "{}",
+            match self {
+                OriginError::InvalidUri(_) => {
+                    "Invalid URI."
+                }
+                OriginError::FaultyScheme => {
+                    "Please use HTTP or HTTPS as scheme."
+                }
+                OriginError::FaultyUriLength => {
+                    "URI length mustn't exceed 253 characters in total."
+                }
+                OriginError::FaultyPort => {
+                    "Port number was expected."
+                }
+                OriginError::FaultyIp => {
+                    "Ip was misformatted."
+                }
+                OriginError::InvalidHost => {
+                    "Invalid URI for usage in Origin. (e.g. Part length mustn't exceed 63 characters, and start and end with a digit or letter)"
+                }
+                OriginError::InvalidSuffix => {
+                    "URI should not contain a path, query or segment. (e.g. 'https://example.com/hello' should be 'https://example.com' )"
+                }
+            }
+        )
     }
 }
 
@@ -249,9 +287,7 @@ mod test {
             OriginError::InvalidHost
         );
 
-        assert!(
-            Origin::new("https://ëxample.com:8080").is_err()
-        );
+        assert!(Origin::new("https://ëxample.com:8080").is_err());
 
         assert!(
             Origin::new("http://%example.com").is_err() //Gives InvalidUri error, which's enums aren't public so unable to directly compare.
@@ -270,17 +306,35 @@ mod test {
 
     #[test]
     fn origin_scheme_invalidation() {
-        assert_eq!(Origin::new("foobarhttp://example.com").unwrap_err(), OriginError::FaultyScheme);
-        assert_eq!(Origin::new("example.com").unwrap_err(), OriginError::FaultyScheme);
-        assert_eq!(Origin::new("sub.example.com").unwrap_err(), OriginError::FaultyScheme);
-        assert_eq!(Origin::new("192.168.1.0").unwrap_err(), OriginError::FaultyScheme);
-        assert_eq!(Origin::new("sub.example.com:8080").unwrap_err(), OriginError::FaultyScheme);
+        assert_eq!(
+            Origin::new("foobarhttp://example.com").unwrap_err(),
+            OriginError::FaultyScheme
+        );
+        assert_eq!(
+            Origin::new("example.com").unwrap_err(),
+            OriginError::FaultyScheme
+        );
+        assert_eq!(
+            Origin::new("sub.example.com").unwrap_err(),
+            OriginError::FaultyScheme
+        );
+        assert_eq!(
+            Origin::new("192.168.1.0").unwrap_err(),
+            OriginError::FaultyScheme
+        );
+        assert_eq!(
+            Origin::new("sub.example.com:8080").unwrap_err(),
+            OriginError::FaultyScheme
+        );
     }
 
     #[test]
     fn origin_length_invalidation() {
         let origin = "https://thisisaridiculouslylongurithatshoulddefinitelybeinvalidaccordingtothistest.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijk.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijkl.com";
-        assert_eq!(Origin::new(origin).unwrap_err(), OriginError::FaultyUriLength)
+        assert_eq!(
+            Origin::new(origin).unwrap_err(),
+            OriginError::FaultyUriLength
+        )
     }
 
     #[test]
@@ -291,7 +345,10 @@ mod test {
 
     #[test]
     fn origin_port_invalidation() {
-        assert_eq!(Origin::new("http://example.com:abcd").unwrap_err(), OriginError::FaultyPort)
+        assert_eq!(
+            Origin::new("http://example.com:abcd").unwrap_err(),
+            OriginError::FaultyPort
+        )
     }
 
     #[test]
@@ -358,6 +415,5 @@ mod test {
         assert!(
             Origin::new("https:///api/hello").is_err() // http::URI gives an InvalidUri InvalidScheme error
         );
-
     }
 }
