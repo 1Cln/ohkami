@@ -46,6 +46,19 @@ pub enum Scheme {
     Https,
 }
 
+impl std::fmt::Display for Scheme {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Scheme::Http => "http",
+                Scheme::Https => "https",
+            }
+        )
+    }
+}
+
 impl Origin {
     const MIN_IP_PART_COUNT: usize = 4;
     const MAX_HOST_LENGTH: usize = 253;
@@ -142,14 +155,6 @@ impl Origin {
         }
     }
 
-    fn scheme_str(&self) -> &str {
-        if self.0.scheme() == Some(&http::uri::Scheme::HTTP) {
-            "http"
-        } else {
-            "https" // definitely Https because of `Self::new` parser logic
-        }
-    }
-
     fn port(&self) -> Option<u16> {
         self.0.port_u16()
     }
@@ -159,16 +164,14 @@ impl Origin {
         self.0.host().unwrap()
     }
 
-    fn authority(&self) -> &str {
-        // assured by `Origin::new` for the same reason as `host` method seen above
-        self.0.authority().unwrap().as_str()
+    fn authority(&self) -> &http::uri::Authority {
+        self.0.authority().unwrap()
     }
 }
 
 impl std::fmt::Display for Origin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Both are assured due to the way Origin is parsed.
-        write!(f, "{}://{}", self.scheme_str(), self.authority())
+        write!(f, "{}://{}", self.scheme(), self.authority())
     }
 }
 
