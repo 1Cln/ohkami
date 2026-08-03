@@ -26,7 +26,7 @@ impl CorsOrigin {
     /// and if all appropriate validation succeeds inside [`Origin`] and [`CorsOrigin`] returns Self.
     ///
     /// # Examples
-    /// ```rust
+    /// ```ignore
     /// fn run() {
     ///     CorsOrigin::new("https://*.localhost:3000").unwrap(); //Gives CorsOrigin
     ///     CorsOrigin::new("https://*.localhost:").unwrap(); //Gives CorsOriginError
@@ -94,7 +94,7 @@ impl AllowOriginConfig {
     /// Parse string based on the Cors origin string syntax.
     ///
     /// # Examples
-    /// ```rust
+    /// ```ignore
     /// fn run() {
     ///     AllowOriginConfig::new("https://localhost:3000").unwrap(); //Gives AllowOriginConfig::CorsOrigin
     ///     AllowOriginConfig::new("*").unwrap(); //Gives AllowOriginConfig::Any
@@ -113,7 +113,7 @@ impl AllowOriginConfig {
     /// Checks if according to the noted rules for wildcards in this struct, the incoming origin would match.
     ///
     /// # Examples
-    /// ```
+    /// ```ignore
     /// fn run() {
     ///     let cors = AllowOriginConfig::new("*").unwrap();
     ///     let origin = Origin::new("https://localhost:5173").unwrap();

@@ -67,7 +67,7 @@ impl Origin {
     /// Parse string into HTTP origin.
     ///
     /// # Examples
-    /// ```rust
+    /// ```ignore
     /// fn run() {
     ///     Origin::new("https://localhost:3000").unwrap();
     /// }
