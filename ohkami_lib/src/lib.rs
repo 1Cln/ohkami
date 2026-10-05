@@ -17,6 +17,8 @@ pub mod serde_multipart;
 pub mod serde_urlencoded;
 pub mod serde_utf8;
 
+pub mod uri;
+
 #[cfg(feature = "stream")]
 pub mod stream;
 #[cfg(feature = "stream")]
